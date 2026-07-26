@@ -1,0 +1,90 @@
+{
+  "dataset_root": "C:\\Users\\28457\\Desktop\\remote_dataset\\remote\\Postdam",
+  "image_dir": "4_Ortho_RGBIR",
+  "label_dir": "5_Labels_all",
+  "sam3_repo": "C:\\Users\\28457\\Desktop\\CODE\\sam3-main\\sam3-main",
+  "checkpoint_path": null,
+  "device": "cuda",
+  "tile_size": 1024,
+  "tile_overlap": 256,
+  "score_threshold": 0.55,
+  "mask_threshold": 0.5,
+  "min_mask_area": 64,
+  "max_mask_area_ratio": 0.95,
+  "conflict_margin": 0.03,
+  "ignore_index": 255,
+  "rgb_band_indices": [0, 1, 2],
+  "prompting": {
+    "style": "remoteclip_b2c",
+    "include_manual_prompts": true,
+    "max_prompts_per_class": 8
+  },
+  "classes": [
+    {
+      "id": 1,
+      "name": "impervious_surface",
+      "label_color": [255, 255, 255],
+      "prompts": [
+        "impervious surface",
+        "paved road",
+        "asphalt surface in aerial imagery",
+        "overhead view of paved ground"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "building",
+      "label_color": [0, 0, 255],
+      "prompts": [
+        "building",
+        "buildings in satellite imagery",
+        "rooftops in aerial imagery",
+        "overhead view of buildings"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "low_vegetation",
+      "label_color": [0, 255, 255],
+      "prompts": [
+        "low vegetation",
+        "grass",
+        "lawn in aerial imagery",
+        "low plants in satellite imagery"
+      ]
+    },
+    {
+      "id": 4,
+      "name": "tree",
+      "label_color": [0, 255, 0],
+      "prompts": [
+        "tree",
+        "trees in aerial imagery",
+        "tree crown",
+        "overhead view of trees"
+      ]
+    },
+    {
+      "id": 5,
+      "name": "car",
+      "label_color": [255, 255, 0],
+      "prompts": [
+        "car",
+        "small cars in aerial imagery",
+        "vehicles in satellite imagery",
+        "overhead view of cars"
+      ]
+    }
+  ],
+  "background_colors": [
+    [255, 0, 0]
+  ],
+  "remoteclip": {
+    "enabled": false,
+    "model_name": "ViT-B-32",
+    "checkpoint_path": null,
+    "device": "cuda",
+    "top_k_per_class": 2,
+    "min_score": null
+  }
+}

@@ -1,0 +1,12 @@
+Metadata-Version: 2.4
+Name: sam3-remote-wsss
+Version: 0.1.0
+Summary: SAM3-based pseudo-label generation for remote-sensing image-level WSSS
+Requires-Python: >=3.10
+Requires-Dist: numpy
+Requires-Dist: pillow
+Requires-Dist: tifffile
+Requires-Dist: tqdm
+Provides-Extra: student
+Requires-Dist: torch; extra == "student"
+Requires-Dist: torchvision; extra == "student"

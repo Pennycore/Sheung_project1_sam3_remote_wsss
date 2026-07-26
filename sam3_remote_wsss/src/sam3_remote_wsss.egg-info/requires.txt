@@ -1,0 +1,8 @@
+numpy
+pillow
+tifffile
+tqdm
+
+[student]
+torch
+torchvision

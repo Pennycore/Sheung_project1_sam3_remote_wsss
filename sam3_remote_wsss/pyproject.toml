@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sam3-remote-wsss"
+version = "0.1.0"
+description = "SAM3-based pseudo-label generation for remote-sensing image-level WSSS"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "pillow",
+    "tifffile",
+    "tqdm",
+]
+
+[project.optional-dependencies]
+student = [
+    "torch",
+    "torchvision",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-dir]
+"" = "src"

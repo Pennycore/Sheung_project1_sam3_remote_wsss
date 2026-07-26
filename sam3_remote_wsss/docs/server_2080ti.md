@@ -1,5 +1,10 @@
 # Running On A 2 x 2080Ti Server
 
+> Current recommendation: prepare explicit 512 x 512 patches first with
+> `python -m sam3_remote_wsss.prepare_potsdam_patches`. The complete current
+> commands are maintained in `docs/runbook.md`. This prevents every SAM3 tile
+> from inheriting all positive classes of its 6000 x 6000 parent image.
+
 The recommended strategy is two independent Python processes:
 
 ```text
@@ -46,17 +51,25 @@ cd /data/code/sam3_remote_wsss
 pip install -e .
 ```
 
-## 3. Build Image-Level Labels
+## 3. Build The Explicit Patch Dataset
 
-If you are simulating image-level labels from Potsdam masks:
+Use one source image first as a smoke test:
 
 ```bash
-python -m sam3_remote_wsss.build_image_level_labels \
+export PATCH_ROOT=/home/undergr/remote_dataset/Postdam_patches_512
+
+python -m sam3_remote_wsss.prepare_potsdam_patches \
   --config configs/potsdam_sam3_2080ti.json \
-  --output data/potsdam_image_level_labels.csv
+  --output-root "$PATCH_ROOT" \
+  --patch-size 512 \
+  --patch-overlap 128 \
+  --min-class-pixels 16 \
+  --class-min-pixels car=4 \
+  --limit 1 \
+  --skip-existing
 ```
 
-If you already have real image-level labels, prepare the same CSV format:
+The generated weak-label CSV still has the standard format:
 
 ```csv
 image_id,impervious_surface,building,low_vegetation,tree,car
@@ -67,10 +80,10 @@ top_potsdam_2_10,1,1,1,1,1
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 python -m sam3_remote_wsss.generate_pseudo_labels \
-  --config configs/potsdam_sam3_2080ti.json \
-  --labels-csv data/potsdam_image_level_labels.csv \
+  --config "$PATCH_ROOT/potsdam_patches_config.json" \
+  --labels-csv "$PATCH_ROOT/image_level_labels.csv" \
   --output-dir runs/smoke \
-  --limit 1
+  --limit 5
 ```
 
 Check:
@@ -82,10 +95,13 @@ runs/smoke/pseudo_labels
 
 ## 5. Run Both GPUs
 
+Before the full run, execute the patch-preparation command from step 3 again
+without `--limit 1`. Keep `--skip-existing` so the smoke patches are reused.
+
 ```bash
 bash scripts/run_two_2080ti.sh \
-  configs/potsdam_sam3_2080ti.json \
-  data/potsdam_image_level_labels.csv \
+  "$PATCH_ROOT/potsdam_patches_config.json" \
+  "$PATCH_ROOT/image_level_labels.csv" \
   runs/potsdam_sam3_2080ti
 ```
 
@@ -102,7 +118,7 @@ The script uses `--skip-existing`, so it can be rerun after interruption.
 
 ```bash
 python -m sam3_remote_wsss.evaluate_pseudo_labels \
-  --config configs/potsdam_sam3_2080ti.json \
+  --config "$PATCH_ROOT/potsdam_patches_config.json" \
   --pseudo-label-dir runs/potsdam_sam3_2080ti/pseudo_labels \
   --output runs/potsdam_sam3_2080ti/pseudo_metrics.json
 ```
@@ -115,7 +131,7 @@ Single GPU smoke test:
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 python -m sam3_remote_wsss.train_student \
-  --config configs/potsdam_sam3_2080ti.json \
+  --config "$PATCH_ROOT/potsdam_patches_config.json" \
   --pseudo-label-dir runs/potsdam_sam3_2080ti/pseudo_labels \
   --output-dir runs/student_smoke \
   --epochs 1 \
@@ -128,7 +144,7 @@ Two visible GPUs with simple DataParallel:
 
 ```bash
 CUDA_VISIBLE_DEVICES=0,1 python -m sam3_remote_wsss.train_student \
-  --config configs/potsdam_sam3_2080ti.json \
+  --config "$PATCH_ROOT/potsdam_patches_config.json" \
   --pseudo-label-dir runs/potsdam_sam3_2080ti/pseudo_labels \
   --output-dir runs/student_segformer_resnet50 \
   --epochs 20 \

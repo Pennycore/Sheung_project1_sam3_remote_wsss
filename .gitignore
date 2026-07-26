@@ -4,3 +4,4 @@ runs/
 *.pt
 *.ckpt
 data/
+sam3_remote_wsss/configs/potsdam_local.json

@@ -11,8 +11,9 @@ import tifffile
 from .config import ClassSpec, ProjectConfig
 
 
-IMAGE_RE = re.compile(r"^(top_potsdam_\d+_\d+)_RGBIR\.tif$", re.IGNORECASE)
-LABEL_RE = re.compile(r"^(top_potsdam_\d+_\d+)_label\.tif$", re.IGNORECASE)
+POTSDAM_ID_PATTERN = r"top_potsdam_\d+_\d+(?:_x\d+_y\d+)?"
+IMAGE_RE = re.compile(rf"^({POTSDAM_ID_PATTERN})_RGBIR\.tif$", re.IGNORECASE)
+LABEL_RE = re.compile(rf"^({POTSDAM_ID_PATTERN})_label\.tif$", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -81,19 +82,44 @@ def normalize_to_uint8(arr: np.ndarray) -> np.ndarray:
     return (np.clip(arr, 0, 1) * 255).astype(np.uint8)
 
 
-def label_rgb_to_ids(label_rgb: np.ndarray, classes: tuple[ClassSpec, ...], ignore_index: int) -> np.ndarray:
+def label_rgb_to_ids(
+    label_rgb: np.ndarray,
+    classes: tuple[ClassSpec, ...],
+    ignore_index: int,
+    background_colors: tuple[tuple[int, int, int], ...] = (),
+) -> np.ndarray:
     label_ids = np.full(label_rgb.shape[:2], ignore_index, dtype=np.uint8)
+    for background_color in background_colors:
+        color = np.array(background_color, dtype=np.uint8)
+        label_ids[np.all(label_rgb == color, axis=-1)] = 0
     for spec in classes:
         color = np.array(spec.label_color, dtype=np.uint8)
         label_ids[np.all(label_rgb == color, axis=-1)] = spec.id
     return label_ids
 
 
-def image_level_from_label(label_rgb: np.ndarray, classes: tuple[ClassSpec, ...]) -> dict[str, int]:
+def image_level_from_label(
+    label_rgb: np.ndarray,
+    classes: tuple[ClassSpec, ...],
+    min_class_pixels: int = 1,
+    min_class_ratio: float = 0.0,
+    class_min_pixels: dict[str, int] | None = None,
+) -> dict[str, int]:
+    if min_class_pixels < 1:
+        raise ValueError("min_class_pixels must be at least 1")
+    if min_class_ratio < 0.0 or min_class_ratio > 1.0:
+        raise ValueError("min_class_ratio must be in [0, 1]")
+
+    area = label_rgb.shape[0] * label_rgb.shape[1]
+    ratio_threshold = int(np.ceil(area * min_class_ratio))
+    overrides = class_min_pixels or {}
     result: dict[str, int] = {}
     for spec in classes:
         color = np.array(spec.label_color, dtype=np.uint8)
-        result[spec.name] = int(np.any(np.all(label_rgb == color, axis=-1)))
+        count = int(np.count_nonzero(np.all(label_rgb == color, axis=-1)))
+        pixel_threshold = overrides.get(spec.name, min_class_pixels)
+        threshold = max(1, pixel_threshold, ratio_threshold)
+        result[spec.name] = int(count >= threshold)
     return result
 
 

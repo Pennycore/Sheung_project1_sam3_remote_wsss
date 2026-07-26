@@ -37,7 +37,12 @@ def main() -> None:
         if item is None or item.label_path is None:
             continue
         pred = np.asarray(Image.open(pseudo_path).convert("L"), dtype=np.uint8)
-        gt = label_rgb_to_ids(read_label_rgb(item.label_path), config.classes, config.ignore_index)
+        gt = label_rgb_to_ids(
+            read_label_rgb(item.label_path),
+            config.classes,
+            config.ignore_index,
+            background_colors=config.background_colors,
+        )
         valid = (gt != config.ignore_index) & (pred != config.ignore_index)
         valid &= (gt < num_classes) & (pred < num_classes)
         if not np.any(valid):

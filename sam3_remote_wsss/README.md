@@ -4,6 +4,20 @@ This project is a lightweight prototype for using SAM3 to generate semantic
 pseudo labels from image-level labels on remote-sensing datasets such as
 Potsdam.
 
+## Project Handoff And Reproduction
+
+The project now keeps its long-term context in four Chinese documents so a new
+machine or a new Codex task can continue without the original chat history:
+
+- [`docs/current_status.md`](docs/current_status.md): current implementation,
+  measured results, limitations, and next priorities.
+- [`docs/environment_setup.md`](docs/environment_setup.md): reproducible Linux
+  environment setup, including the 2080Ti BF16 compatibility check.
+- [`docs/experiment_log.md`](docs/experiment_log.md): results that have already
+  been run and validated.
+- [`docs/runbook.md`](docs/runbook.md): daily smoke, evaluation, two-GPU pseudo
+  labeling, and student training commands.
+
 The design is intentionally separate from the original SAM3 repository. SAM3 is
 used as a backend mask generator, while this project owns the WSSS logic:
 
@@ -18,10 +32,10 @@ image-level labels
 
 ## Dataset Assumption
 
-The default config targets your local Potsdam dataset:
+The config expects a Potsdam dataset root with this layout:
 
 ```text
-C:\Users\28457\Desktop\remote_dataset\remote\Postdam
+/path/to/Postdam
   4_Ortho_RGBIR
     top_potsdam_2_10_RGBIR.tif
     ...
@@ -34,6 +48,10 @@ Potsdam images are 6000 x 6000 RGBIR TIFFs. The pseudo-label generator only
 uses image-level labels at inference time. The full pixel labels can be used to
 derive weak image-level labels and later evaluate pseudo-label quality.
 
+The recommended workflow first writes explicit 512 x 512 patches and derives a
+separate image-level label row for each patch. This avoids applying every class
+from a 6000 x 6000 parent image to every small SAM3 tile.
+
 ## Why Tiles
 
 SAM3 resizes images internally, so running it on a full 6000 x 6000 scene may
@@ -43,15 +61,12 @@ image coordinates.
 
 ## Install
 
-Use the same Python environment as SAM3. Install SAM3 first, then install this
-project in editable mode:
+Use the same Python environment as SAM3. From this repository root, install
+SAM3 first and then the WSSS package:
 
-```powershell
-cd C:\Users\28457\Desktop\CODE\sam3-main\sam3-main
-pip install -e .
-
-cd C:\Users\28457\Documents\Codex\2026-06-16\c-users-28457-desktop-code-sam3\outputs\sam3_remote_wsss
-pip install -e .
+```bash
+python -m pip install -e sam3-main/sam3-main
+python -m pip install -e sam3_remote_wsss
 ```
 
 Recommended extra packages:
@@ -62,12 +77,35 @@ pip install tifffile pillow numpy tqdm
 
 SAM3 itself requires a CUDA-capable environment and checkpoint access. Student
 training additionally needs PyTorch and TorchVision, which are usually already
-present in a SAM3 environment.
+present in a SAM3 environment. See `docs/environment_setup.md` for the tested
+2080Ti dependency pins and the NumPy/OpenCV compatibility fix.
 
-## Step 1: Build Image-Level Labels
+## Step 0: Prepare An Explicit Patch Dataset
 
-For early experiments, we can derive weak image-level labels from Potsdam's
-pixel labels. This simulates image-level supervision and produces a CSV.
+For Potsdam, use the pixel GT once to simulate patch-level image tags and keep
+the copied patch GT isolated for evaluation. The SAM3 generator and student do
+not read the pixel GT during training:
+
+```bash
+python -m sam3_remote_wsss.prepare_potsdam_patches \
+  --config configs/potsdam_sam3_2080ti.json \
+  --output-root /home/undergr/remote_dataset/Postdam_patches_512 \
+  --patch-size 512 \
+  --patch-overlap 128 \
+  --min-class-pixels 16 \
+  --class-min-pixels car=4 \
+  --skip-existing
+```
+
+Outputs include `image_level_labels.csv`, `patches.csv`, patch RGBIR/GT TIFFs,
+and `potsdam_patches_config.json`. The generated config points to the patch
+dataset and sets SAM3 tiling to one tile per patch.
+
+## Step 1: Build Full-Image Labels (Legacy Baseline)
+
+For comparison with the earlier full-image baseline, derive one weak label row
+per 6000 x 6000 parent image. Do not use this CSV for the recommended patch
+workflow because nearly every parent image contains all foreground classes.
 
 ```powershell
 python -m sam3_remote_wsss.build_image_level_labels ^
@@ -82,7 +120,8 @@ image_id,impervious_surface,building,low_vegetation,tree,car
 top_potsdam_2_10,1,1,1,1,1
 ```
 
-`clutter/background` is treated as background, not a prompted foreground class.
+`clutter/background` is class ID `0`, not a prompted foreground class. Unknown
+GT colors remain `255` ignore.
 
 ## Step 2: Generate SAM3 Pseudo Labels
 
@@ -100,8 +139,8 @@ two independent shards:
 
 ```bash
 bash scripts/run_two_2080ti.sh \
-  configs/potsdam_sam3_2080ti.json \
-  data/potsdam_image_level_labels.csv \
+  /path/to/Postdam_patches_512/potsdam_patches_config.json \
+  /path/to/Postdam_patches_512/image_level_labels.csv \
   runs/potsdam_sam3_2080ti
 ```
 

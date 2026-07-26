@@ -1,0 +1,6 @@
+checkpoints/
+runs/
+*.pth
+*.pt
+*.ckpt
+data/

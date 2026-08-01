@@ -155,6 +155,10 @@ Important config fields:
 - `tile_overlap`: default `256`.
 - `score_threshold`: minimum SAM3 score to keep a mask.
 - `ignore_index`: pixels with unresolved conflicts are written as `255`.
+- `uncovered_label`: label used where no accepted SAM3 mask exists. The
+  recommended value is `255`, so uncertain pixels are ignored during student
+  training. Set it to `0` only to reproduce the earlier hard-background
+  baseline.
 
 ## Output Layout
 
@@ -179,6 +183,13 @@ Pseudo-label IDs:
 5   car
 255 ignore
 ```
+
+Pseudo-label evaluation reports two complementary protocols. `miou` and
+`foreground_miou` are strict: uncovered pixels count as missed ground-truth
+pixels. `labeled_miou` and `labeled_foreground_miou` measure correctness only
+where the pseudo label did not abstain. Always report `labeled_coverage`
+alongside the labeled metrics to prevent low-coverage pseudo labels from
+appearing artificially strong.
 
 ## Current Model Idea
 

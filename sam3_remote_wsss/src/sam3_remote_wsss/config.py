@@ -47,6 +47,7 @@ class ProjectConfig:
     max_mask_area_ratio: float
     conflict_margin: float
     ignore_index: int
+    uncovered_label: int
     rgb_band_indices: tuple[int, int, int]
     classes: tuple[ClassSpec, ...]
     background_colors: tuple[tuple[int, int, int], ...]
@@ -74,6 +75,7 @@ def parse_config(raw: dict[str, Any]) -> ProjectConfig:
     remoteclip_raw = raw.get("remoteclip", {})
     remoteclip_ckpt = remoteclip_raw.get("checkpoint_path")
     prompting_raw = raw.get("prompting", {})
+    ignore_index = int(raw.get("ignore_index", 255))
     return ProjectConfig(
         dataset_root=Path(raw["dataset_root"]),
         image_dir=str(raw["image_dir"]),
@@ -88,7 +90,8 @@ def parse_config(raw: dict[str, Any]) -> ProjectConfig:
         min_mask_area=int(raw.get("min_mask_area", 64)),
         max_mask_area_ratio=float(raw.get("max_mask_area_ratio", 0.95)),
         conflict_margin=float(raw.get("conflict_margin", 0.03)),
-        ignore_index=int(raw.get("ignore_index", 255)),
+        ignore_index=ignore_index,
+        uncovered_label=int(raw.get("uncovered_label", ignore_index)),
         rgb_band_indices=tuple(int(v) for v in raw.get("rgb_band_indices", [0, 1, 2])),
         classes=classes,
         background_colors=tuple(

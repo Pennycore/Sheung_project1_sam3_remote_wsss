@@ -12,7 +12,11 @@ from PIL import Image
 import tifffile
 
 from sam3_remote_wsss.config import ClassSpec
-from sam3_remote_wsss.evaluate_pseudo_labels import main as evaluate_main
+from sam3_remote_wsss.evaluate_pseudo_labels import (
+    compute_evaluation_metrics,
+    main as evaluate_main,
+)
+from sam3_remote_wsss.fusion import FusionCanvas
 from sam3_remote_wsss.potsdam import (
     discover_potsdam_items,
     image_level_from_label,
@@ -66,6 +70,43 @@ class PotsdamMappingTests(unittest.TestCase):
             )["car"],
             1,
         )
+
+
+class PseudoLabelPolicyTests(unittest.TestCase):
+    def test_uncovered_pixels_stay_ignored(self) -> None:
+        canvas = FusionCanvas(height=2, width=3, ignore_index=255, uncovered_label=255)
+        canvas.add_mask(
+            np.array([[1, 0], [0, 1]], dtype=np.uint8),
+            class_id=2,
+            score=0.8,
+            x0=0,
+            y0=0,
+        )
+
+        np.testing.assert_array_equal(
+            canvas.result(),
+            np.array([[2, 255, 255], [255, 2, 255]], dtype=np.uint8),
+        )
+
+    def test_strict_and_labeled_metrics_report_coverage(self) -> None:
+        confusion = np.array([[1, 0], [0, 1]], dtype=np.int64)
+        gt_count = np.array([1, 3], dtype=np.int64)
+        labeled_gt_count = np.array([1, 1], dtype=np.int64)
+
+        class Config:
+            classes = (ClassSpec(1, "foreground", (255, 255, 255), ("foreground",)),)
+
+        metrics = compute_evaluation_metrics(
+            confusion,
+            gt_count,
+            labeled_gt_count,
+            Config(),
+        )
+
+        self.assertEqual(metrics["class_iou"]["foreground"], 1 / 3)
+        self.assertEqual(metrics["labeled_class_iou"]["foreground"], 1.0)
+        self.assertEqual(metrics["labeled_coverage"], 0.5)
+        self.assertEqual(metrics["per_class_labeled_coverage"]["foreground"], 1 / 3)
 
 
 class PotsdamPatchDatasetTests(unittest.TestCase):

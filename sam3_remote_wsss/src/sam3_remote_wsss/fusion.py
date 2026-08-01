@@ -10,12 +10,19 @@ class FusionCanvas:
     height: int
     width: int
     ignore_index: int = 255
+    uncovered_label: int = 255
     conflict_margin: float = 0.03
     labels: np.ndarray = field(init=False)
     scores: np.ndarray = field(init=False)
 
     def __post_init__(self) -> None:
-        self.labels = np.zeros((self.height, self.width), dtype=np.uint8)
+        if not 0 <= self.uncovered_label <= np.iinfo(np.uint8).max:
+            raise ValueError("uncovered_label must fit in uint8")
+        self.labels = np.full(
+            (self.height, self.width),
+            self.uncovered_label,
+            dtype=np.uint8,
+        )
         self.scores = np.zeros((self.height, self.width), dtype=np.float32)
 
     def add_mask(self, mask: np.ndarray, class_id: int, score: float, x0: int, y0: int) -> None:
@@ -30,7 +37,7 @@ class FusionCanvas:
         better = mask_bool & (score > region_scores + self.conflict_margin)
         close_conflict = (
             mask_bool
-            & (region_labels != 0)
+            & (region_scores > 0)
             & (region_labels != class_id)
             & (np.abs(score - region_scores) <= self.conflict_margin)
         )

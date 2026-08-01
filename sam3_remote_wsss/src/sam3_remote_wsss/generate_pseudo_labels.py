@@ -85,6 +85,7 @@ class SAM3WSSSPseudoLabeler:
             height=height,
             width=width,
             ignore_index=self.config.ignore_index,
+            uncovered_label=self.config.uncovered_label,
             conflict_margin=self.config.conflict_margin,
         )
 

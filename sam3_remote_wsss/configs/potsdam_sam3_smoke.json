@@ -13,6 +13,7 @@
   "max_mask_area_ratio": 0.95,
   "conflict_margin": 0.03,
   "ignore_index": 255,
+  "uncovered_label": 255,
   "rgb_band_indices": [
     0,
     1,

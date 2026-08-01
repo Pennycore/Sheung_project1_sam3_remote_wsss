@@ -32,6 +32,16 @@ class PromptingConfig:
 
 
 @dataclass(frozen=True)
+class BackgroundPromptingConfig:
+    enabled: bool
+    prompts: tuple[str, ...]
+    score_threshold: float
+    min_mask_area: int
+    max_mask_area_ratio: float
+    conflict_margin: float
+
+
+@dataclass(frozen=True)
 class ProjectConfig:
     dataset_root: Path
     image_dir: str
@@ -53,6 +63,7 @@ class ProjectConfig:
     background_colors: tuple[tuple[int, int, int], ...]
     remoteclip: RemoteCLIPConfig
     prompting: PromptingConfig
+    background_prompting: BackgroundPromptingConfig
 
 
 def load_config(path: str | Path) -> ProjectConfig:
@@ -75,7 +86,16 @@ def parse_config(raw: dict[str, Any]) -> ProjectConfig:
     remoteclip_raw = raw.get("remoteclip", {})
     remoteclip_ckpt = remoteclip_raw.get("checkpoint_path")
     prompting_raw = raw.get("prompting", {})
+    background_prompting_raw = raw.get("background_prompting", {})
     ignore_index = int(raw.get("ignore_index", 255))
+    background_prompting_enabled = bool(background_prompting_raw.get("enabled", False))
+    background_prompts = tuple(
+        str(prompt).strip()
+        for prompt in background_prompting_raw.get("prompts", [])
+        if str(prompt).strip()
+    )
+    if background_prompting_enabled and not background_prompts:
+        raise ValueError("background_prompting.prompts must not be empty when enabled")
     return ProjectConfig(
         dataset_root=Path(raw["dataset_root"]),
         image_dir=str(raw["image_dir"]),
@@ -116,6 +136,31 @@ def parse_config(raw: dict[str, Any]) -> ProjectConfig:
                 int(prompting_raw["max_prompts_per_class"])
                 if prompting_raw.get("max_prompts_per_class") is not None
                 else None
+            ),
+        ),
+        background_prompting=BackgroundPromptingConfig(
+            enabled=background_prompting_enabled,
+            prompts=background_prompts,
+            score_threshold=float(
+                background_prompting_raw.get(
+                    "score_threshold",
+                    raw.get("score_threshold", 0.5),
+                )
+            ),
+            min_mask_area=int(
+                background_prompting_raw.get(
+                    "min_mask_area",
+                    raw.get("min_mask_area", 64),
+                )
+            ),
+            max_mask_area_ratio=float(
+                background_prompting_raw.get("max_mask_area_ratio", 0.5)
+            ),
+            conflict_margin=float(
+                background_prompting_raw.get(
+                    "conflict_margin",
+                    raw.get("conflict_margin", 0.03),
+                )
             ),
         ),
     )

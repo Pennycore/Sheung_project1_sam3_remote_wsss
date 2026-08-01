@@ -11,7 +11,7 @@ import numpy as np
 from PIL import Image
 import tifffile
 
-from sam3_remote_wsss.config import ClassSpec
+from sam3_remote_wsss.config import ClassSpec, parse_config
 from sam3_remote_wsss.evaluate_pseudo_labels import (
     compute_evaluation_metrics,
     main as evaluate_main,
@@ -73,6 +73,27 @@ class PotsdamMappingTests(unittest.TestCase):
 
 
 class PseudoLabelPolicyTests(unittest.TestCase):
+    def test_prompted_background_config_is_parsed(self) -> None:
+        raw = _config(Path("/tmp/potsdam"))
+        raw["background_prompting"] = {
+            "enabled": True,
+            "prompts": ["clutter in aerial imagery"],
+            "score_threshold": 0.6,
+            "min_mask_area": 16,
+            "max_mask_area_ratio": 0.5,
+            "conflict_margin": 0.04,
+        }
+
+        config = parse_config(raw)
+
+        self.assertTrue(config.background_prompting.enabled)
+        self.assertEqual(
+            config.background_prompting.prompts,
+            ("clutter in aerial imagery",),
+        )
+        self.assertEqual(config.background_prompting.score_threshold, 0.6)
+        self.assertEqual(config.background_prompting.conflict_margin, 0.04)
+
     def test_uncovered_pixels_stay_ignored(self) -> None:
         canvas = FusionCanvas(height=2, width=3, ignore_index=255, uncovered_label=255)
         canvas.add_mask(
@@ -86,6 +107,33 @@ class PseudoLabelPolicyTests(unittest.TestCase):
         np.testing.assert_array_equal(
             canvas.result(),
             np.array([[2, 255, 255], [255, 2, 255]], dtype=np.uint8),
+        )
+
+    def test_prompted_background_fills_uncovered_and_ignores_conflicts(self) -> None:
+        canvas = FusionCanvas(height=1, width=4, ignore_index=255, uncovered_label=255)
+        canvas.add_mask(
+            np.array([[1, 1]], dtype=np.uint8),
+            class_id=2,
+            score=0.8,
+            x0=0,
+            y0=0,
+        )
+        canvas.add_background_mask(
+            np.array([[1, 0, 1, 1]], dtype=np.uint8),
+            score=0.7,
+            x0=0,
+            y0=0,
+        )
+        canvas.add_background_mask(
+            np.array([[0, 1, 0, 0]], dtype=np.uint8),
+            score=0.78,
+            x0=0,
+            y0=0,
+        )
+
+        np.testing.assert_array_equal(
+            canvas.result(background_conflict_margin=0.03),
+            np.array([[2, 255, 0, 0]], dtype=np.uint8),
         )
 
     def test_strict_and_labeled_metrics_report_coverage(self) -> None:
@@ -173,6 +221,7 @@ class PotsdamPatchDatasetTests(unittest.TestCase):
             self.assertEqual(read_rgbir_as_rgb(items[0].image_path, (0, 1, 2)).shape, (2, 2, 3))
             self.assertEqual(patch_config.tile_size, 2)
             self.assertEqual(patch_config.tile_overlap, 0)
+            self.assertFalse(patch_config.background_prompting.enabled)
 
             pseudo_root = temporary_path / "pseudo"
             pseudo_root.mkdir()

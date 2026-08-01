@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
+import numpy as np
 from tqdm import tqdm
 
 from .config import ClassSpec, load_config
@@ -40,11 +41,17 @@ class SAM3WSSSPseudoLabeler:
         self.backend = None
         self.prompt_selector = None
         if not dry_run:
+            backend_threshold = self.config.score_threshold
+            if self.config.background_prompting.enabled:
+                backend_threshold = min(
+                    backend_threshold,
+                    self.config.background_prompting.score_threshold,
+                )
             self.backend = SAM3ImageBackend(
                 sam3_repo=self.config.sam3_repo,
                 checkpoint_path=self.config.checkpoint_path,
                 device=self.config.device,
-                confidence_threshold=self.config.score_threshold,
+                confidence_threshold=backend_threshold,
             )
             if self.config.remoteclip.enabled:
                 self.prompt_selector = RemoteCLIPPromptSelector(self.config.remoteclip)
@@ -62,6 +69,9 @@ class SAM3WSSSPseudoLabeler:
                 "tile_count": len(tiles),
                 "kept_masks": 0,
                 "prompts": {spec.name: prompts_for_class(spec, self.config.prompting) for spec in specs},
+                "background_prompting_enabled": self.config.background_prompting.enabled,
+                "background_prompts": list(self.config.background_prompting.prompts),
+                "kept_background_masks": 0,
                 "remoteclip_enabled": self.config.remoteclip.enabled,
             }
             return metadata
@@ -76,7 +86,10 @@ class SAM3WSSSPseudoLabeler:
             "positive_classes": positives,
             "tile_count": len(tiles),
             "kept_masks": 0,
+            "kept_background_masks": 0,
             "prompts": {},
+            "background_prompting_enabled": self.config.background_prompting.enabled,
+            "background_prompts": list(self.config.background_prompting.prompts),
             "remoteclip_enabled": self.config.remoteclip.enabled,
             "remoteclip_selected_prompts": {},
         }
@@ -99,9 +112,7 @@ class SAM3WSSSPseudoLabeler:
                 )
                 for prompt in metadata["prompts"][spec.name]:
                     prompt_jobs.append((spec, prompt))
-            if not prompt_jobs:
-                continue
-            if self.prompt_selector is not None:
+            if self.prompt_selector is not None and prompt_jobs:
                 selected = self.prompt_selector.select(tile_image, prompt_jobs)
                 prompt_jobs = [(spec, prompt) for spec, prompt, _score in selected]
                 for spec, prompt, score in selected:
@@ -112,12 +123,20 @@ class SAM3WSSSPseudoLabeler:
                             "tile": [tile.x0, tile.y0, tile.x1, tile.y1],
                         }
                     )
-                if not prompt_jobs:
-                    continue
-            outputs = self.backend.predict_texts(  # type: ignore[union-attr]
-                tile_image, [prompt for _, prompt in prompt_jobs]
+            background_prompts = (
+                list(self.config.background_prompting.prompts)
+                if self.config.background_prompting.enabled
+                else []
             )
-            for (spec, _prompt), output in zip(prompt_jobs, outputs):
+            all_prompts = [prompt for _, prompt in prompt_jobs] + background_prompts
+            if not all_prompts:
+                continue
+            outputs = self.backend.predict_texts(  # type: ignore[union-attr]
+                tile_image, all_prompts
+            )
+            foreground_outputs = outputs[: len(prompt_jobs)]
+            background_outputs = outputs[len(prompt_jobs) :]
+            for (spec, _prompt), output in zip(prompt_jobs, foreground_outputs):
                 kept = filter_masks(
                     output["masks"],
                     output["scores"],
@@ -129,7 +148,26 @@ class SAM3WSSSPseudoLabeler:
                     canvas.add_mask(mask=mask, class_id=spec.id, score=score, x0=tile.x0, y0=tile.y0)
                 metadata["kept_masks"] += len(kept)
 
-        label = canvas.result()
+            for output in background_outputs:
+                kept = filter_masks(
+                    output["masks"],
+                    output["scores"],
+                    score_threshold=self.config.background_prompting.score_threshold,
+                    min_area=self.config.background_prompting.min_mask_area,
+                    max_area_ratio=self.config.background_prompting.max_mask_area_ratio,
+                )
+                for mask, score in kept:
+                    canvas.add_background_mask(mask=mask, score=score, x0=tile.x0, y0=tile.y0)
+                metadata["kept_background_masks"] += len(kept)
+
+        label = canvas.result(
+            background_conflict_margin=self.config.background_prompting.conflict_margin
+        )
+        ids, counts = np.unique(label, return_counts=True)
+        metadata["pseudo_label_pixel_counts"] = {
+            str(int(class_id)): int(count)
+            for class_id, count in zip(ids, counts)
+        }
         self._save_outputs(image_id, image, label, metadata)
         return metadata
 

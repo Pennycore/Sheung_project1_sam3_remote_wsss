@@ -159,6 +159,9 @@ Important config fields:
   recommended value is `255`, so uncertain pixels are ignored during student
   training. Set it to `0` only to reproduce the earlier hard-background
   baseline.
+- `background_prompting`: optional PromptBG settings. Accepted background masks
+  fill only uncovered pixels; similarly scored foreground/background overlaps
+  become `255` instead of forcing either class.
 
 ## Output Layout
 
@@ -190,6 +193,24 @@ pixels. `labeled_miou` and `labeled_foreground_miou` measure correctness only
 where the pseudo label did not abstain. Always report `labeled_coverage`
 alongside the labeled metrics to prevent low-coverage pseudo labels from
 appearing artificially strong.
+
+PromptBG can be enabled with a separate conservative threshold:
+
+```json
+"background_prompting": {
+  "enabled": true,
+  "prompts": [
+    "clutter and miscellaneous objects in aerial imagery",
+    "unclassified background regions in a remote sensing image",
+    "boundary clutter in overhead imagery",
+    "miscellaneous non-target areas in satellite imagery"
+  ],
+  "score_threshold": 0.6,
+  "min_mask_area": 16,
+  "max_mask_area_ratio": 0.5,
+  "conflict_margin": 0.03
+}
+```
 
 ## Current Model Idea
 

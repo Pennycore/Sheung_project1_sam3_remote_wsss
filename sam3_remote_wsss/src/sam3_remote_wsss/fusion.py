@@ -14,6 +14,7 @@ class FusionCanvas:
     conflict_margin: float = 0.03
     labels: np.ndarray = field(init=False)
     scores: np.ndarray = field(init=False)
+    background_scores: np.ndarray = field(init=False)
 
     def __post_init__(self) -> None:
         if not 0 <= self.uncovered_label <= np.iinfo(np.uint8).max:
@@ -24,6 +25,7 @@ class FusionCanvas:
             dtype=np.uint8,
         )
         self.scores = np.zeros((self.height, self.width), dtype=np.float32)
+        self.background_scores = np.zeros((self.height, self.width), dtype=np.float32)
 
     def add_mask(self, mask: np.ndarray, class_id: int, score: float, x0: int, y0: int) -> None:
         mask_bool = mask.astype(bool)
@@ -46,8 +48,43 @@ class FusionCanvas:
         region_scores[better] = score
         region_labels[close_conflict] = self.ignore_index
 
-    def result(self) -> np.ndarray:
-        return self.labels.copy()
+    def add_background_mask(
+        self,
+        mask: np.ndarray,
+        score: float,
+        x0: int,
+        y0: int,
+    ) -> None:
+        mask_bool = mask.astype(bool)
+        if not np.any(mask_bool):
+            return
+
+        h, w = mask_bool.shape
+        region_scores = self.background_scores[y0 : y0 + h, x0 : x0 + w]
+        region_scores[mask_bool] = np.maximum(region_scores[mask_bool], score)
+
+    def result(self, background_conflict_margin: float = 0.03) -> np.ndarray:
+        labels = self.labels.copy()
+        has_background = self.background_scores > 0
+        uncovered = (
+            has_background
+            & (self.scores == 0)
+            & (labels == self.uncovered_label)
+        )
+        labels[uncovered] = 0
+
+        foreground = (
+            (self.scores > 0)
+            & (labels != 0)
+            & (labels != self.ignore_index)
+        )
+        foreground_background_conflict = (
+            foreground
+            & has_background
+            & (self.background_scores >= self.scores - background_conflict_margin)
+        )
+        labels[foreground_background_conflict] = self.ignore_index
+        return labels
 
 
 def filter_masks(

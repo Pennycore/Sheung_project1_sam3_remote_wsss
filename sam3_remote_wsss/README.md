@@ -97,8 +97,7 @@ python -m sam3_remote_wsss.prepare_potsdam_patches \
   --patch-size 512 \
   --patch-overlap 128 \
   --min-class-pixels 16 \
-  --class-min-pixels car=4 \
-  --skip-existing
+  --class-min-pixels car=4
 ```
 
 The split contains 17 train, 6 validation, 14 held-out test, and one excluded
@@ -319,27 +318,38 @@ it is never trained as an image-level class.
 Train the classifier on the explicit patch dataset:
 
 ```bash
+FULL_ROOT=/home/undergr/remote_dataset/Postdam_patches_512_full
+
 CUDA_VISIBLE_DEVICES=0,1 python -m sam3_remote_wsss.train_cam \
-  --config /path/to/Postdam_patches_512/potsdam_patches_config_prompt4.json \
-  --labels-csv /path/to/Postdam_patches_512/image_level_labels.csv \
-  --output-dir runs/cam_resnet50 \
+  --config "$FULL_ROOT/potsdam_patches_config.json" \
+  --labels-csv "$FULL_ROOT/image_level_labels_train.csv" \
+  --val-labels-csv "$FULL_ROOT/image_level_labels_val.csv" \
+  --output-dir runs/cam_resnet50_full \
   --epochs 20 \
   --batch-size 8 \
+  --image-size 512 \
   --backbone resnet50 \
   --output-stride 16 \
   --pretrained-backbone \
+  --num-workers 4 \
   --data-parallel \
   --amp
 ```
+
+Validation is deterministic and parent-disjoint. The trainer refuses shared
+parent tiles, logs validation loss plus micro/macro/per-class F1, and selects
+`checkpoints/best.pt` by validation macro-F1 (validation loss breaks ties).
+Training F1 is diagnostic only. A fresh run clears an existing `train_log.jsonl`
+because resume training is not implemented.
 
 Generate normalized multi-scale CAMs:
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 python -m sam3_remote_wsss.generate_cams \
-  --config /path/to/Postdam_patches_512/potsdam_patches_config_prompt4.json \
-  --labels-csv /path/to/Postdam_patches_512/image_level_labels.csv \
-  --checkpoint runs/cam_resnet50/checkpoints/last.pt \
-  --output-dir runs/cam_resnet50/cams \
+  --config "$FULL_ROOT/potsdam_patches_config.json" \
+  --labels-csv "$FULL_ROOT/image_level_labels_train.csv" \
+  --checkpoint runs/cam_resnet50_full/checkpoints/best.pt \
+  --output-dir runs/cam_resnet50_full/cams_train \
   --scales 0.5,1.0,1.5 \
   --visualize-limit 10 \
   --amp
@@ -349,11 +359,11 @@ Fuse CAMs with the `Ignore255` SAM3 pseudo labels:
 
 ```bash
 python -m sam3_remote_wsss.fuse_cam_sam \
-  --config /path/to/Postdam_patches_512/potsdam_patches_config_prompt4.json \
-  --labels-csv /path/to/Postdam_patches_512/image_level_labels.csv \
-  --sam-pseudo-label-dir runs/sam3_prompt4_ignore255/pseudo_labels \
-  --cam-dir runs/cam_resnet50/cams \
-  --output-dir runs/cam_sam_fused \
+  --config "$FULL_ROOT/potsdam_patches_config.json" \
+  --labels-csv "$FULL_ROOT/image_level_labels_train.csv" \
+  --sam-pseudo-label-dir runs/sam3_prompt4_full_train/pseudo_labels \
+  --cam-dir runs/cam_resnet50_full/cams_train \
+  --output-dir runs/cam_sam_background_only_full_train \
   --background-threshold 0.0 \
   --background-only
 ```

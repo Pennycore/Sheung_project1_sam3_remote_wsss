@@ -458,6 +458,24 @@ prepare_potsdam_patches.py --parent-split
 完整 patch 生成运行时间、磁盘占用与 patch_summary.json:
 ```
 
+### CAM 正式验证闭环代码
+
+```text
+日期: 2026-08-03
+状态: 代码与单元测试完成，服务器正式训练尚未运行
+训练集: image_level_labels_train.csv，17 个父图
+验证集: image_level_labels_val.csv，6 个父图
+checkpoint 选择: validation macro-F1 最大，val loss 用于同分决胜
+输出: checkpoints/last.pt 与 checkpoints/best.pt
+测试: 14/14 passed
+```
+
+`train_cam` 现在记录 train/validation loss、micro-F1、macro-F1 和每类 F1，
+并从 patch ID 反推父图 ID，发现 train/validation 共享父图时直接终止。
+验证集关闭随机增强。新运行会清空同目录的旧 `train_log.jsonl`，防止多次独立
+运行的 epoch 被误读为一次连续训练。正式生成 CAM 时必须使用 `best.pt`，不能
+根据训练 F1 选择 `last.pt`。
+
 ## 后续实验记录模板
 
 ```text

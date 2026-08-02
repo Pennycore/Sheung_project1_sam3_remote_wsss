@@ -528,7 +528,7 @@ CUDA_VISIBLE_DEVICES=0,1 python -m sam3_remote_wsss.train_student \
 
 - 尚未把完整 Potsdam 数据集切成 patch。
 - 已建立 17/6/14 父图划分清单，尚未在服务器完成全量 patch 生成。
-- 已完成单父图 256 patch 的 1 epoch CAM smoke，尚未在完整父图划分上正式训练。
+- CAM 训练已支持父图隔离验证、验证 macro-F1 选 `best.pt` 和每类验证 F1；尚未在完整父图划分上正式训练。
 - 已完成单父图 CAM/SAM3 hybrid 和 background-only 指标，尚未在正式多父图划分上验证。
 - 尚未完成 student 独立验证集推理、patch 拼接和最终 mIoU 闭环。
 - 已在单父图 256 patch 上扫描背景和前景阈值，正式数据仍需复核。
@@ -552,6 +552,6 @@ CAM/SAM3 代码、CAM 热力图检查、阈值扫描、background-only 伪标签
 完整 Potsdam 已清点为 38 对父图/标签，正式 split 为 17 train、6 val、14 test、排除 7_10；下一步是生成 /home/undergr/remote_dataset/Postdam_patches_512_full。
 
 请基于现有实现继续，不要重新设计。先检查 Git 状态和服务器是否拉取最新提交，
-然后运行 256 patch CAM smoke、检查 CAM 可视化，再决定是否生成完整 Potsdam patch
-数据集并建立按父图划分的正式实验。
+然后先生成完整 Potsdam patch 数据集并核对 17/6/14 数量，再用 train/val CSV
+正式训练 CAM。生成 CAM 时使用验证集选出的 best.pt，不再重复单父图 smoke。
 ```

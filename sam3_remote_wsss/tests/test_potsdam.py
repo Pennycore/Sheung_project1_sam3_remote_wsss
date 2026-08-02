@@ -33,6 +33,11 @@ from sam3_remote_wsss.prepare_potsdam_patches import (
     load_parent_split,
     prepare_patches,
 )
+from sam3_remote_wsss.train_cam import (
+    _ensure_parent_disjoint,
+    _f1_metrics,
+    _parent_image_id,
+)
 
 
 CLASSES = (
@@ -256,6 +261,36 @@ class CAMFusionTests(unittest.TestCase):
         self.assertEqual(stats["background_pixels"], 1)
         self.assertEqual(stats["cam_foreground_pixels"], 0)
         self.assertEqual(stats["conflict_pixels"], 0)
+
+
+class CAMTrainingTests(unittest.TestCase):
+    def test_f1_metrics_report_micro_macro_and_per_class(self) -> None:
+        micro, macro, per_class = _f1_metrics(
+            tp=np.array([2, 0], dtype=np.int64),
+            fp=np.array([1, 0], dtype=np.int64),
+            fn=np.array([0, 0], dtype=np.int64),
+            class_names=("building", "car"),
+        )
+
+        self.assertAlmostEqual(micro, 0.8)
+        self.assertAlmostEqual(macro, 0.4)
+        self.assertEqual(per_class, {"building": 0.8, "car": 0.0})
+
+    def test_cam_validation_rejects_shared_parent_tiles(self) -> None:
+        self.assertEqual(
+            _parent_image_id("top_potsdam_2_10_x0384_y0768"),
+            "top_potsdam_2_10",
+        )
+        with self.assertRaisesRegex(ValueError, "share parent images"):
+            _ensure_parent_disjoint(
+                ["top_potsdam_2_10_x0000_y0000"],
+                ["top_potsdam_2_10_x0384_y0768"],
+            )
+
+        _ensure_parent_disjoint(
+            ["top_potsdam_2_10_x0000_y0000"],
+            ["top_potsdam_2_11_x0000_y0000"],
+        )
 
 
 class PotsdamPatchDatasetTests(unittest.TestCase):

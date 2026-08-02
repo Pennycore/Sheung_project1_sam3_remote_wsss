@@ -11,6 +11,11 @@ import numpy as np
 from PIL import Image
 import tifffile
 
+from sam3_remote_wsss.cam.fusion import (
+    fuse_cam_and_sam_with_stats,
+    normalize_cams,
+)
+from sam3_remote_wsss.cam.dataset import PotsdamImageLevelDataset
 from sam3_remote_wsss.config import ClassSpec, parse_config
 from sam3_remote_wsss.evaluate_pseudo_labels import (
     compute_evaluation_metrics,
@@ -157,6 +162,69 @@ class PseudoLabelPolicyTests(unittest.TestCase):
         self.assertEqual(metrics["per_class_labeled_coverage"]["foreground"], 1 / 3)
 
 
+class CAMFusionTests(unittest.TestCase):
+    def test_cam_normalization_is_per_class(self) -> None:
+        cams = np.array(
+            [
+                [[0.0, 2.0], [1.0, -1.0]],
+                [[0.0, 0.0], [0.0, 0.0]],
+            ],
+            dtype=np.float32,
+        )
+
+        normalized = normalize_cams(cams)
+
+        np.testing.assert_allclose(
+            normalized[0],
+            np.array([[0.0, 1.0], [0.5, 0.0]], dtype=np.float32),
+        )
+        np.testing.assert_array_equal(normalized[1], np.zeros((2, 2), dtype=np.float32))
+
+    def test_cam_sam_fusion_excludes_background_and_keeps_supported_sam(self) -> None:
+        sam = np.array([[2, 255, 255, 3]], dtype=np.uint8)
+        cams = np.array(
+            [
+                [[0.1, 0.8, 0.1, 0.9]],
+                [[0.9, 0.1, 0.1, 0.4]],
+            ],
+            dtype=np.float32,
+        )
+
+        fused, stats = fuse_cam_and_sam_with_stats(
+            sam_label=sam,
+            cams=cams,
+            class_ids=[2, 3],
+            positive_class_ids={2, 3},
+            background_threshold=0.2,
+            foreground_threshold=0.7,
+            cam_support_threshold=0.3,
+        )
+
+        np.testing.assert_array_equal(
+            fused,
+            np.array([[255, 2, 0, 3]], dtype=np.uint8),
+        )
+        self.assertEqual(stats["conflict_pixels"], 1)
+        self.assertEqual(stats["cam_foreground_pixels"], 1)
+        self.assertEqual(stats["background_pixels"], 1)
+        self.assertEqual(stats["sam_foreground_pixels"], 1)
+
+    def test_absent_classes_cannot_be_fused(self) -> None:
+        sam = np.full((1, 2), 255, dtype=np.uint8)
+        cams = np.array([[[0.9, 0.1]], [[0.1, 0.9]]], dtype=np.float32)
+
+        fused, _stats = fuse_cam_and_sam_with_stats(
+            sam_label=sam,
+            cams=cams,
+            class_ids=[2, 3],
+            positive_class_ids={2},
+            background_threshold=0.2,
+            foreground_threshold=0.7,
+        )
+
+        np.testing.assert_array_equal(fused, np.array([[2, 0]], dtype=np.uint8))
+
+
 class PotsdamPatchDatasetTests(unittest.TestCase):
     def test_patch_dataset_is_discoverable_and_has_per_patch_tags(self) -> None:
         with TemporaryDirectory() as temporary:
@@ -222,6 +290,16 @@ class PotsdamPatchDatasetTests(unittest.TestCase):
             self.assertEqual(patch_config.tile_size, 2)
             self.assertEqual(patch_config.tile_overlap, 0)
             self.assertFalse(patch_config.background_prompting.enabled)
+
+            cam_dataset = PotsdamImageLevelDataset(
+                config=patch_config,
+                labels_csv=output_root / "image_level_labels.csv",
+                image_size=2,
+                augment=False,
+            )
+            self.assertEqual(len(cam_dataset), 4)
+            self.assertEqual(tuple(cam_dataset[0]["image"].shape), (3, 2, 2))
+            self.assertEqual(float(cam_dataset[0]["target"][1]), 1.0)
 
             pseudo_root = temporary_path / "pseudo"
             pseudo_root.mkdir()

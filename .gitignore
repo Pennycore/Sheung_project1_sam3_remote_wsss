@@ -5,3 +5,6 @@ runs/
 *.ckpt
 data/
 sam3_remote_wsss/configs/potsdam_local.json
+*.egg-info/
+__pycache__/
+*.py[cod]

@@ -6,11 +6,13 @@ Potsdam.
 
 ## Project Handoff And Reproduction
 
-The project now keeps its long-term context in four Chinese documents so a new
+The project now keeps its long-term context in Chinese documents so a new
 machine or a new Codex task can continue without the original chat history:
 
-- [`docs/current_status.md`](docs/current_status.md): current implementation,
-  measured results, limitations, and next priorities.
+- [`docs/handoff.md`](docs/handoff.md): canonical current handoff, measured
+  results, CAM/SAM3 status, server paths, and next commands.
+- [`docs/current_status.md`](docs/current_status.md): earlier implementation
+  snapshot retained for historical context.
 - [`docs/environment_setup.md`](docs/environment_setup.md): reproducible Linux
   environment setup, including the 2080Ti BF16 compatibility check.
 - [`docs/experiment_log.md`](docs/experiment_log.md): results that have already
@@ -249,12 +251,13 @@ You can control this in config:
 }
 ```
 
-This deliberately avoids a classification network at first. If SAM3-only masks
-are noisy, the next extension should add one of these optional modules:
+This deliberately avoids a classification network in the SAM3-only baseline.
+The implemented CAM/SAM3 extension adds a multi-label classifier when denser
+foreground coverage and reliable background exclusion are required:
 
 - RemoteCLIP tile/prompt filtering.
-- CAM-generated boxes or points as SAM3 geometric prompts.
-- Mask verification using a small class-specific classifier.
+- CAM low-response background seeds and high-response foreground completion.
+- CAM/SAM3 conflict rejection with `255` ignore labels.
 
 ## Optional RemoteCLIP Prompt Selection
 
@@ -297,7 +300,70 @@ python -m sam3_remote_wsss.evaluate_pseudo_labels ^
 The most useful number here is `foreground_miou`. If it is extremely low, fix
 prompting, tiling, score thresholds, or RemoteCLIP filtering before training.
 
-## Step 4: Train A SegFormer-Head Student
+## Step 4: Train CAM And Fuse It With SAM3
+
+The CAM classifier predicts only the five foreground classes from image-level
+labels. Background is inferred where every positive foreground CAM is weak;
+it is never trained as an image-level class.
+
+Train the classifier on the explicit patch dataset:
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1 python -m sam3_remote_wsss.train_cam \
+  --config /path/to/Postdam_patches_512/potsdam_patches_config_prompt4.json \
+  --labels-csv /path/to/Postdam_patches_512/image_level_labels.csv \
+  --output-dir runs/cam_resnet50 \
+  --epochs 20 \
+  --batch-size 8 \
+  --backbone resnet50 \
+  --output-stride 16 \
+  --pretrained-backbone \
+  --data-parallel \
+  --amp
+```
+
+Generate normalized multi-scale CAMs:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python -m sam3_remote_wsss.generate_cams \
+  --config /path/to/Postdam_patches_512/potsdam_patches_config_prompt4.json \
+  --labels-csv /path/to/Postdam_patches_512/image_level_labels.csv \
+  --checkpoint runs/cam_resnet50/checkpoints/last.pt \
+  --output-dir runs/cam_resnet50/cams \
+  --scales 0.5,1.0,1.5 \
+  --visualize-limit 10 \
+  --amp
+```
+
+Fuse CAMs with the `Ignore255` SAM3 pseudo labels:
+
+```bash
+python -m sam3_remote_wsss.fuse_cam_sam \
+  --config /path/to/Postdam_patches_512/potsdam_patches_config_prompt4.json \
+  --labels-csv /path/to/Postdam_patches_512/image_level_labels.csv \
+  --sam-pseudo-label-dir runs/sam3_prompt4_ignore255/pseudo_labels \
+  --cam-dir runs/cam_resnet50/cams \
+  --output-dir runs/cam_sam_fused \
+  --background-threshold 0.2 \
+  --foreground-threshold 0.7 \
+  --cam-support-threshold 0.3
+```
+
+The fusion policy is conservative:
+
+```text
+SAM3 foreground + no strong CAM conflict -> keep the SAM3 class
+no SAM3 mask + CAM >= foreground threshold -> fill from CAM
+no SAM3 mask + every CAM <= background threshold -> background 0
+strong CAM/SAM3 class conflict or intermediate confidence -> ignore 255
+```
+
+Evaluate `runs/cam_sam_fused/pseudo_labels` with the same
+`evaluate_pseudo_labels` command used for the SAM3-only ablations. CAM training
+and fusion consume only RGB imagery and image-level CSV labels; pixel GT stays
+isolated for offline evaluation.
+
+## Step 5: Train A SegFormer-Head Student
 
 The project now includes a student segmentation model:
 
@@ -324,7 +390,8 @@ Train on SAM3 pseudo labels:
 ```powershell
 python -m sam3_remote_wsss.train_student ^
   --config configs/potsdam_sam3_only.json ^
-  --pseudo-label-dir runs/potsdam_sam3_only/pseudo_labels ^
+  --pseudo-label-dir runs/cam_sam_fused/pseudo_labels ^
+  --cam-checkpoint runs/cam_resnet50/checkpoints/last.pt ^
   --output-dir runs/student_segformer_resnet50 ^
   --epochs 20 ^
   --batch-size 4 ^
@@ -338,6 +405,9 @@ python -m sam3_remote_wsss.train_student ^
   --ignore-boundary-width 1 ^
   --amp
 ```
+
+For the SAM3-only student ablation, point `--pseudo-label-dir` to the SAM3
+output and omit `--cam-checkpoint`.
 
 For a quick smoke test:
 

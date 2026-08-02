@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 
 from .config import load_config
+from .cam.model import load_encoder_from_cam_checkpoint
 from .student.dataset import PotsdamPseudoSegDataset
 from .student.losses import toco_seg_loss
 from .student.model import StudentSegmentor
@@ -32,6 +33,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dropout-ratio", type=float, default=0.1)
     parser.add_argument("--output-stride", type=int, choices=[16, 32], default=16)
     parser.add_argument("--pretrained-backbone", action="store_true")
+    parser.add_argument(
+        "--cam-checkpoint",
+        default=None,
+        help="Optional CAM checkpoint used to initialize the student encoder.",
+    )
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--data-parallel", action="store_true", help="Use torch.nn.DataParallel when multiple CUDA devices are visible.")
     parser.add_argument("--num-workers", type=int, default=0)
@@ -125,7 +131,14 @@ def main() -> None:
         output_stride=args.output_stride,
         segformer_embed_dim=args.segformer_embed_dim,
         dropout_ratio=args.dropout_ratio,
-    ).to(device)
+    )
+    if args.cam_checkpoint:
+        checkpoint = load_encoder_from_cam_checkpoint(model.encoder, args.cam_checkpoint)
+        print(
+            "initialized student encoder from CAM checkpoint "
+            f"epoch={checkpoint.get('epoch', 'unknown')}"
+        )
+    model = model.to(device)
     if args.data_parallel and device.type == "cuda" and torch.cuda.device_count() > 1:
         model = torch.nn.DataParallel(model)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)

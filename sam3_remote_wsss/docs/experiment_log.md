@@ -320,21 +320,142 @@ SAM3 Ignore255 的 256 patch 基线为 strict foreground mIoU `0.4255`、labeled
 
 据此新增正式 `background_only` 融合模式：完整保留 SAM3 前景，不使用 CAM 补前景，也不让 CAM 删除 SAM3 掩码；仅在所有正类 CAM 恰为零的位置生成背景，其余区域保持 `255`。full hybrid 模式保留为消融实验。
 
-当前阶段：生成少量 CAM，并检查 `runs/cam_smoke_256/cams/visualizations`。人工检查项目：
+### 256 patch background-only 最终评估
 
-- car 响应是否集中于车辆，而不是道路或建筑边缘。
-- building 响应是否覆盖屋顶主体。
-- impervious surface 是否定位道路和硬质地表。
-- tree 与 low vegetation 是否出现大面积混淆。
-- 图像级负类是否被正确屏蔽。
-- CAM 是否退化为整图响应、边缘响应或单一热点。
+服务器更新到 commit `ad1340e` 后，使用以下策略重新融合全部 256 patch：
+
+```text
+SAM3 foreground: 完整保留
+CAM foreground completion: disabled
+CAM/SAM3 conflict rejection: disabled
+background threshold: 0.00
+uncovered remainder: 255
+output: runs/cam_sam_background_only_256
+```
+
+结果：
+
+```json
+{
+  "class_iou": {
+    "background": 0.048216974243363894,
+    "impervious_surface": 0.4123100328041728,
+    "building": 0.5775959893277807,
+    "low_vegetation": 0.22887519200950893,
+    "tree": 0.13897292995996338,
+    "car": 0.769554920774433
+  },
+  "miou": 0.3625876731865371,
+  "foreground_miou": 0.42546181297517177,
+  "labeled_miou": 0.5386070276455444,
+  "labeled_foreground_miou": 0.6208152782160715,
+  "labeled_coverage": 0.5208916962146759,
+  "evaluated_images": 256
+}
+```
+
+与 SAM3 Ignore255 256 patch 基线对比：
+
+| 指标 | SAM3 Ignore255 | CAM background-only | 变化 |
+| --- | ---: | ---: | ---: |
+| background IoU | 0.0000 | 0.0482 | +0.0482 |
+| foreground mIoU | 0.4254618 | 0.4254618 | 0.0000 |
+| mIoU | 0.3545515 | 0.3625877 | +0.0080362 |
+| labeled foreground mIoU | 0.6213079 | 0.6208153 | -0.0004926 |
+| labeled mIoU | 0.5177566 | 0.5386070 | +0.0208504 |
+| labeled coverage | 0.5133281 | 0.5208917 | +0.0075635 |
+
+背景种子统计：
+
+```text
+predicted background = 507,581
+correct background   = 450,472
+false background     = 57,109
+background precision = 0.8875
+background recall    = 0.0485
+```
+
+误判背景主要来自 low vegetation 的 56,264 个像素，另有 building 573、tree 272；impervious surface 和 car 没有被该规则误判为背景。
+
+结论：background-only 是当前一父图诊断数据上最可信的融合策略。它严格保持 SAM3 的前景结果，以 88.75% precision 增加少量背景种子，使总 mIoU 提升 0.80 个百分点、labeled mIoU 提升 2.09 个百分点，代价是 labeled foreground mIoU 下降 0.05 个百分点。该结果证明 CAM 当前适合做保守背景排除，不适合补前景。由于全部 patch 仍来自单一父图，该策略仍需在按父图划分的完整 Potsdam 数据上验证。
+
+### Background-only SegFormer student smoke
+
+```text
+日期: 2026-08-03
+Git commit: ad1340e
+设备: 2 x NVIDIA 2080Ti，torch.nn.DataParallel
+伪标签: runs/cam_sam_background_only_256/pseudo_labels
+encoder 初始化: runs/cam_smoke_256/checkpoints/last.pt
+student: ResNet-50 + SegFormer-style head
+epochs: 1
+batch size: 4
+crop size: 512
+samples per image: 1
+AMP: enabled
+output: runs/student_background_only_smoke
+```
+
+同一输出目录被独立运行了两次，`train_log.jsonl` 采用追加写入：
+
+```text
+run 1: epoch=1 loss=4.69349205866456
+run 2: epoch=1 loss=4.630455622449517
+final lr: 2.368307135172497e-06
+latest checkpoint: runs/student_background_only_smoke/checkpoints/last.pt
+checkpoint size: 284 MB
+```
+
+当前 `last.pt` 对应第二次运行。两条日志不是一次训练的 epoch 1/2，第二次也没有从第一次 resume。后续实验应使用不同输出目录或在重新运行前归档旧日志，避免误读。
+
+结论：background-only 伪标签、CAM encoder 初始化、SegFormer student、双 2080Ti DataParallel、AMP、反向传播和 checkpoint 保存全部跑通。loss 仅用于工程 smoke，不代表收敛或分割精度。单父图调试到此停止，下一阶段转向完整 Potsdam 父图清点、父图级划分和 student 验证闭环。
+
+## 数据阶段 F：完整 Potsdam 清点与父图划分
+
+服务器数据清点：
+
+```text
+日期: 2026-08-03
+dataset_root: /home/undergr/remote_dataset/Postdam
+RGBIR parent tiles: 38
+pixel-label parent tiles: 38
+RGBIR/label pairing: complete
+dataset size: 9.0 GB
+parent resolution: 6000 x 6000
+```
+
+采用固定父图划分：
+
+```text
+train:   17 parents -> 4,352 patches
+val:      6 parents -> 1,536 patches
+test:    14 parents -> 3,584 patches
+exclude:  1 parent  -> top_potsdam_7_10
+total generated: 37 parents -> 9,472 patches
+patch size: 512 x 512
+patch overlap: 128
+```
+
+test 使用常见的 14 张固定父图：`2_13`、`2_14`、`3_13`、`3_14`、`4_13`、`4_14`、`4_15`、`5_13`、`5_14`、`5_15`、`6_13`、`6_14`、`6_15`、`7_13`。train+val 使用剩余常用 23 张训练父图；validation 参考已发表的 17/7/14 划分，并移除经文献报告有标注问题的 `7_10`，最终为 17/6/14。
+
+工程已新增：
+
+```text
+configs/potsdam_parent_split_17_6_14.json
+configs/potsdam_server_prompt4.json
+prepare_potsdam_patches.py --parent-split
+```
+
+生成器会验证每个可用父图恰好出现一次，拒绝跨 split 重复、未知 ID 和未分配 ID。输出 `image_level_labels_train.csv`、`image_level_labels_val.csv`、`image_level_labels_test.csv`，并在 `patches.csv` 中为每个 patch 写入 `parent_image_id` 和 `split`。这从数据结构上阻止重叠 patch 跨集合泄漏。
+
+划分参考：[ISPRS Potsdam 官方数据说明](https://isprs.org/resources/datasets/benchmarks/UrbanSemLab/2d-sem-label-potsdam.aspx)、[公开的 17/7/14 父图划分](https://doi.org/10.3390/rs15071836)、[23/14 且排除 7_10 的实验协议](https://www.mdpi.com/2072-4292/17/17/3054)。
 
 尚待补录：
 
 ```text
 训练运行时间与峰值显存:
 异常或 warning:
-background_only 模式的 256 patch 最终评估:
+完整 patch 生成运行时间、磁盘占用与 patch_summary.json:
 ```
 
 ## 后续实验记录模板

@@ -29,7 +29,10 @@ from sam3_remote_wsss.potsdam import (
     read_label_rgb,
     read_rgbir_as_rgb,
 )
-from sam3_remote_wsss.prepare_potsdam_patches import prepare_patches
+from sam3_remote_wsss.prepare_potsdam_patches import (
+    load_parent_split,
+    prepare_patches,
+)
 
 
 CLASSES = (
@@ -284,6 +287,18 @@ class PotsdamPatchDatasetTests(unittest.TestCase):
                 json.dumps(_config(source_root)),
                 encoding="utf-8",
             )
+            split_path = temporary_path / "parent_split.json"
+            split_path.write_text(
+                json.dumps(
+                    {
+                        "train": ["top_potsdam_2_10"],
+                        "val": [],
+                        "test": [],
+                        "exclude": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
             output_root = temporary_path / "patches"
             summary = prepare_patches(
                 config_path,
@@ -292,9 +307,13 @@ class PotsdamPatchDatasetTests(unittest.TestCase):
                 patch_overlap=0,
                 min_class_pixels=1,
                 compression="deflate",
+                parent_split=split_path,
             )
 
             self.assertEqual(summary["patches"], 4)
+            self.assertEqual(summary["split_parent_images"]["train"], 1)
+            self.assertEqual(summary["split_patches"]["train"], 4)
+            self.assertEqual(summary["split_patches"]["val"], 0)
             with (output_root / "image_level_labels.csv").open(
                 encoding="utf-8", newline=""
             ) as handle:
@@ -309,6 +328,21 @@ class PotsdamPatchDatasetTests(unittest.TestCase):
                 labels_by_id["top_potsdam_2_10_x0002_y0000"]["building"],
                 "0",
             )
+            with (output_root / "image_level_labels_train.csv").open(
+                encoding="utf-8", newline=""
+            ) as handle:
+                train_rows = list(csv.DictReader(handle))
+            self.assertEqual(len(train_rows), 4)
+            with (output_root / "image_level_labels_val.csv").open(
+                encoding="utf-8", newline=""
+            ) as handle:
+                self.assertEqual(list(csv.DictReader(handle)), [])
+            with (output_root / "patches.csv").open(
+                encoding="utf-8", newline=""
+            ) as handle:
+                metadata_rows = list(csv.DictReader(handle))
+            self.assertEqual({row["split"] for row in metadata_rows}, {"train"})
+            self.assertTrue((output_root / "parent_split.json").exists())
 
             from sam3_remote_wsss.config import load_config
 
@@ -359,6 +393,41 @@ class PotsdamPatchDatasetTests(unittest.TestCase):
             metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
             self.assertEqual(metrics["class_iou"]["background"], 1.0)
             self.assertEqual(metrics["class_iou"]["building"], 1.0)
+
+    def test_parent_split_requires_every_parent_exactly_once(self) -> None:
+        with TemporaryDirectory() as temporary:
+            split_path = Path(temporary) / "split.json"
+            split_path.write_text(
+                json.dumps(
+                    {
+                        "train": ["top_potsdam_2_10"],
+                        "val": ["top_potsdam_2_10"],
+                        "test": [],
+                        "exclude": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "multiple split groups"):
+                load_parent_split(split_path, {"top_potsdam_2_10"})
+
+            split_path.write_text(
+                json.dumps(
+                    {
+                        "train": ["top_potsdam_2_10"],
+                        "val": [],
+                        "test": [],
+                        "exclude": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "unassigned"):
+                load_parent_split(
+                    split_path,
+                    {"top_potsdam_2_10", "top_potsdam_2_11"},
+                )
 
 
 def _config(dataset_root: Path) -> dict:

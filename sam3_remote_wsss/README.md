@@ -86,12 +86,14 @@ present in a SAM3 environment. See `docs/environment_setup.md` for the tested
 
 For Potsdam, use the pixel GT once to simulate patch-level image tags and keep
 the copied patch GT isolated for evaluation. The SAM3 generator and student do
-not read the pixel GT during training:
+not read the pixel GT during training. The recommended full-data command also
+applies a parent-tile split before any overlapping patches are used:
 
 ```bash
 python -m sam3_remote_wsss.prepare_potsdam_patches \
-  --config configs/potsdam_sam3_2080ti.json \
-  --output-root /home/undergr/remote_dataset/Postdam_patches_512 \
+  --config configs/potsdam_server_prompt4.json \
+  --parent-split configs/potsdam_parent_split_17_6_14.json \
+  --output-root /home/undergr/remote_dataset/Postdam_patches_512_full \
   --patch-size 512 \
   --patch-overlap 128 \
   --min-class-pixels 16 \
@@ -99,9 +101,17 @@ python -m sam3_remote_wsss.prepare_potsdam_patches \
   --skip-existing
 ```
 
-Outputs include `image_level_labels.csv`, `patches.csv`, patch RGBIR/GT TIFFs,
-and `potsdam_patches_config.json`. The generated config points to the patch
-dataset and sets SAM3 tiling to one tile per patch.
+The split contains 17 train, 6 validation, 14 held-out test, and one excluded
+parent tile (`top_potsdam_7_10`). Outputs include the all-patch CSV plus
+`image_level_labels_train.csv`, `image_level_labels_val.csv`,
+`image_level_labels_test.csv`, `parent_split.json`, `patches.csv`, patch
+RGBIR/GT TIFFs, and `potsdam_patches_config.json`. Each `patches.csv` row records
+its parent ID and split. The generated config points to the patch dataset and
+sets SAM3 tiling to one tile per patch.
+
+This yields 9,472 patches: 4,352 train, 1,536 validation, and 3,584 test. The
+split validator rejects duplicate, unknown, or unassigned parent IDs so
+overlapping patches cannot leak between sets.
 
 ## Step 1: Build Full-Image Labels (Legacy Baseline)
 

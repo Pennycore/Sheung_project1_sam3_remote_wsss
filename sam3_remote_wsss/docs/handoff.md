@@ -288,6 +288,12 @@ checkpoint size         = 270 MB
 
 前景阈值扫描显示，阈值从 `0.70` 升到 `1.00` 时，CAM 新增前景从 329,899 降至 531，labeled foreground mIoU 反而从 `0.6113` 恢复到 `0.6208`，接近 SAM3-only 的 `0.6213`。因此当前正式候选改为 `background_only`：SAM3 独占前景，CAM 只在所有正类响应恰为零的位置提供背景种子，其他区域仍为 `255`。full hybrid 保留为消融。
 
+`background_only` 的 256 patch 最终结果为：mIoU `0.3626`、foreground mIoU `0.4255`、labeled mIoU `0.5386`、labeled foreground mIoU `0.6208`、coverage `0.5209`。与 SAM3 Ignore255 相比，foreground mIoU 完全不变，总 mIoU 提升 `0.0080`，labeled mIoU 提升 `0.0209`。新增 507,581 个背景种子，其中 450,472 个正确，precision 为 `0.8875`。这是当前最可信的伪标签策略，但仍只在单一父图上验证。
+
+background-only student 双卡 smoke 也已完成。使用 CAM checkpoint 初始化 ResNet-50、SegFormer-style head、2 x 2080Ti DataParallel 和 AMP，两次独立 1 epoch 运行的 loss 分别为 `4.6935`、`4.6305`，最新 checkpoint 为 `runs/student_background_only_smoke/checkpoints/last.pt`，大小 `284 MB`。训练闭环正常，但没有独立验证指标。
+
+完整 Potsdam 已清点：38 张 RGBIR、38 张对应标签，共 9.0 GB。正式父图清单为 17 train、6 val、14 test，并排除 `top_potsdam_7_10`。按 512 patch、128 overlap 预计生成 9,472 个 patch，其中 train 4,352、val 1,536、test 3,584。代码已支持 `--parent-split`，自动生成三份 split-specific image-label CSV，并拒绝父图重复、遗漏或未知 ID。
+
 ## 6. 关键代码入口
 
 | 功能 | 文件/模块 |
@@ -521,11 +527,11 @@ CUDA_VISIBLE_DEVICES=0,1 python -m sam3_remote_wsss.train_student \
 ## 13. 尚未完成
 
 - 尚未把完整 Potsdam 数据集切成 patch。
-- 尚未建立按父图划分的正式 train/val/test 列表。
+- 已建立 17/6/14 父图划分清单，尚未在服务器完成全量 patch 生成。
 - 已完成单父图 256 patch 的 1 epoch CAM smoke，尚未在完整父图划分上正式训练。
-- 尚未得到 CAM-only 和 CAM+SAM3 的真实伪标签指标。
+- 已完成单父图 CAM/SAM3 hybrid 和 background-only 指标，尚未在正式多父图划分上验证。
 - 尚未完成 student 独立验证集推理、patch 拼接和最终 mIoU 闭环。
-- 尚未系统搜索 CAM 三个阈值。
+- 已在单父图 256 patch 上扫描背景和前景阈值，正式数据仍需复核。
 - 尚未完成完整 Prompt1/Prompt4/RemoteCLIP 排序消融。
 - 尚未统计两张 2080Ti 上完整实验的运行时间和显存。
 
@@ -542,7 +548,8 @@ Prompt4 驱动 SAM3 生成高精度但稀疏的前景伪标签，再用多标签
 
 SAM3-only 的 256 patch 已标注区域前景 mIoU 为 0.6213，覆盖率为 0.5133；
 但这 256 个 patch 只来自一个父图，只能视为 smoke。PromptBG 已验证失败。
-CAM/SAM3 代码和测试已经完成，CAM 分类器 1 epoch smoke 已运行，但 CAM 热力图检查与融合指标尚未完成。
+CAM/SAM3 代码、CAM 热力图检查、阈值扫描、background-only 伪标签评估和双卡 student smoke 均已完成。当前最佳策略是 SAM3 负责前景、CAM exact-zero 负责高精度背景、其余像素为 255。
+完整 Potsdam 已清点为 38 对父图/标签，正式 split 为 17 train、6 val、14 test、排除 7_10；下一步是生成 /home/undergr/remote_dataset/Postdam_patches_512_full。
 
 请基于现有实现继续，不要重新设计。先检查 Git 状态和服务器是否拉取最新提交，
 然后运行 256 patch CAM smoke、检查 CAM 可视化，再决定是否生成完整 Potsdam patch

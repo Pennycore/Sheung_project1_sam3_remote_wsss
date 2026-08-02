@@ -49,6 +49,14 @@ def parse_args() -> argparse.Namespace:
         help="Per-class threshold override. Can be repeated, for example car=4.",
     )
     parser.add_argument("--compression", choices=["none", "deflate"], default="deflate")
+    parser.add_argument(
+        "--parent-split",
+        default=None,
+        help=(
+            "Optional JSON manifest containing train/val/test/exclude parent IDs. "
+            "Split-specific image-level CSV files are written when provided."
+        ),
+    )
     parser.add_argument("--limit", type=int, default=None, help="Optional source-image limit.")
     parser.add_argument(
         "--skip-existing",
@@ -75,6 +83,36 @@ def parse_class_thresholds(values: list[str], classes: tuple[ClassSpec, ...]) ->
     return thresholds
 
 
+def load_parent_split(
+    path: str | Path,
+    available_parent_ids: set[str],
+) -> tuple[dict[str, str], set[str], dict]:
+    path = Path(path)
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    split_names = ("train", "val", "test")
+    split_by_parent: dict[str, str] = {}
+    excluded = set(str(value) for value in raw.get("exclude", []))
+
+    for split_name in split_names:
+        values = raw.get(split_name)
+        if not isinstance(values, list):
+            raise ValueError(f"Parent split manifest must contain a {split_name} list")
+        for value in values:
+            parent_id = str(value)
+            if parent_id in split_by_parent or parent_id in excluded:
+                raise ValueError(f"Parent ID appears in multiple split groups: {parent_id}")
+            split_by_parent[parent_id] = split_name
+
+    assigned = set(split_by_parent) | excluded
+    unknown = sorted(assigned - available_parent_ids)
+    missing = sorted(available_parent_ids - assigned)
+    if unknown:
+        raise ValueError(f"Parent split contains unknown IDs: {', '.join(unknown)}")
+    if missing:
+        raise ValueError(f"Parent split leaves IDs unassigned: {', '.join(missing)}")
+    return split_by_parent, excluded, raw
+
+
 def prepare_patches(
     config_path: str | Path,
     output_root: str | Path,
@@ -84,6 +122,7 @@ def prepare_patches(
     min_class_ratio: float = 0.0,
     class_min_pixels: dict[str, int] | None = None,
     compression: str = "deflate",
+    parent_split: str | Path | None = None,
     limit: int | None = None,
     skip_existing: bool = False,
 ) -> dict:
@@ -104,7 +143,18 @@ def prepare_patches(
     if compression not in {"none", "deflate"}:
         raise ValueError("compression must be 'none' or 'deflate'")
 
-    items = discover_potsdam_items(config)
+    all_items = discover_potsdam_items(config)
+    split_by_parent: dict[str, str] = {}
+    excluded_parent_ids: set[str] = set()
+    split_manifest: dict | None = None
+    if parent_split is not None:
+        split_by_parent, excluded_parent_ids, split_manifest = load_parent_split(
+            parent_split,
+            {item.image_id for item in all_items},
+        )
+        items = [item for item in all_items if item.image_id in split_by_parent]
+    else:
+        items = all_items
     if limit is not None:
         items = items[:limit]
     missing_labels = [item.image_id for item in items if item.label_path is None]
@@ -119,6 +169,9 @@ def prepare_patches(
 
     class_names = [spec.name for spec in config.classes]
     label_rows: list[dict[str, int | str]] = []
+    split_label_rows: dict[str, list[dict[str, int | str]]] = {
+        split_name: [] for split_name in ("train", "val", "test")
+    }
     metadata_rows: list[dict[str, int | float | str]] = []
     written_patches = 0
     compression_value = None if compression == "none" else compression
@@ -159,9 +212,15 @@ def prepare_patches(
                 _write_tiff(label_path, label_patch, compression_value)
 
             label_rows.append({"image_id": patch_id, **weak_labels})
+            split_name = split_by_parent.get(item.image_id, "all")
+            if split_name in split_label_rows:
+                split_label_rows[split_name].append(
+                    {"image_id": patch_id, **weak_labels}
+                )
             metadata = {
                 "image_id": patch_id,
                 "parent_image_id": item.image_id,
+                "split": split_name,
                 "image_path": (Path(config.image_dir) / image_name).as_posix(),
                 "label_path": (Path(config.label_dir) / label_name).as_posix(),
                 "x0": tile.x0,
@@ -185,6 +244,12 @@ def prepare_patches(
     labels_csv = output_root / "image_level_labels.csv"
     metadata_csv = output_root / "patches.csv"
     _write_csv_atomic(labels_csv, ["image_id", *class_names], label_rows)
+    split_csvs: dict[str, str] = {}
+    if split_manifest is not None:
+        for split_name, rows in split_label_rows.items():
+            split_csv = output_root / f"image_level_labels_{split_name}.csv"
+            _write_csv_atomic(split_csv, ["image_id", *class_names], rows)
+            split_csvs[split_name] = str(split_csv)
     metadata_fields = list(metadata_rows[0]) if metadata_rows else ["image_id"]
     _write_csv_atomic(metadata_csv, metadata_fields, metadata_rows)
 
@@ -193,12 +258,28 @@ def prepare_patches(
     raw_config["dataset_root"] = str(output_root.resolve())
     raw_config["tile_size"] = patch_size
     raw_config["tile_overlap"] = 0
+    if split_manifest is not None:
+        split_copy = output_root / "parent_split.json"
+        split_copy.write_text(json.dumps(split_manifest, indent=2), encoding="utf-8")
+        raw_config["parent_split_manifest"] = str(split_copy.resolve())
     output_config.write_text(json.dumps(raw_config, indent=2), encoding="utf-8")
+
+    split_parent_counts = {
+        split_name: sum(value == split_name for value in split_by_parent.values())
+        for split_name in ("train", "val", "test")
+    }
+    split_patch_counts = {
+        split_name: len(rows) for split_name, rows in split_label_rows.items()
+    }
 
     summary = {
         "source_dataset_root": str(config.dataset_root),
         "output_root": str(output_root.resolve()),
         "source_images": len(items),
+        "available_source_images": len(all_items),
+        "excluded_parent_images": sorted(excluded_parent_ids),
+        "split_parent_images": split_parent_counts,
+        "split_patches": split_patch_counts,
         "patches": written_patches,
         "patch_size": patch_size,
         "patch_overlap": patch_overlap,
@@ -206,6 +287,7 @@ def prepare_patches(
         "min_class_ratio": min_class_ratio,
         "class_min_pixels": class_min_pixels or {},
         "image_level_labels": str(labels_csv),
+        "split_image_level_labels": split_csvs,
         "patch_metadata": str(metadata_csv),
         "config": str(output_config),
     }
@@ -244,6 +326,7 @@ def main() -> None:
         min_class_ratio=args.min_class_ratio,
         class_min_pixels=thresholds,
         compression=args.compression,
+        parent_split=args.parent_split,
         limit=args.limit,
         skip_existing=args.skip_existing,
     )

@@ -224,6 +224,36 @@ class CAMFusionTests(unittest.TestCase):
 
         np.testing.assert_array_equal(fused, np.array([[2, 0]], dtype=np.uint8))
 
+    def test_background_only_preserves_sam_and_disables_cam_foreground(self) -> None:
+        sam = np.array([[2, 255, 255, 3]], dtype=np.uint8)
+        cams = np.array(
+            [
+                [[0.1, 0.9, 0.0, 0.9]],
+                [[0.9, 0.1, 0.0, 0.4]],
+            ],
+            dtype=np.float32,
+        )
+
+        fused, stats = fuse_cam_and_sam_with_stats(
+            sam_label=sam,
+            cams=cams,
+            class_ids=[2, 3],
+            positive_class_ids={2, 3},
+            background_threshold=0.0,
+            foreground_threshold=0.7,
+            cam_support_threshold=0.3,
+            background_only=True,
+        )
+
+        np.testing.assert_array_equal(
+            fused,
+            np.array([[2, 255, 0, 3]], dtype=np.uint8),
+        )
+        self.assertEqual(stats["sam_foreground_pixels"], 2)
+        self.assertEqual(stats["background_pixels"], 1)
+        self.assertEqual(stats["cam_foreground_pixels"], 0)
+        self.assertEqual(stats["conflict_pixels"], 0)
+
 
 class PotsdamPatchDatasetTests(unittest.TestCase):
     def test_patch_dataset_is_discoverable_and_has_per_patch_tags(self) -> None:

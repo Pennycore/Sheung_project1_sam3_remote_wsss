@@ -130,7 +130,7 @@ fuse_cam_sam CLI passed
 CAM checkpoint -> student encoder loading smoke passed
 ```
 
-CAM 代码已经完成，但尚未在服务器上产生真实 CAM/SAM3 融合指标。
+CAM 代码已经完成，并已在服务器上完成 256 patch、1 epoch 的训练 smoke；尚未产生真实 CAM/SAM3 融合指标。
 
 ## 5. 已运行实验和结果
 
@@ -256,6 +256,37 @@ miscellaneous non-target regions  = 0.0251
 ```
 
 结论：抽象背景文本不适合作为主背景生成方法，后续改用 CAM 排除法。
+
+### 5.10 CAM 分类器，256 patch，1 epoch smoke
+
+```text
+Git commit              = 43366c6
+backbone                = ImageNet pretrained ResNet-50
+GPU                     = 1 x NVIDIA 2080Ti
+loss                    = 0.4549
+micro F1                = 0.8283
+impervious_surface F1   = 0.9082
+building F1             = 0.8328
+low_vegetation F1       = 0.9719
+tree F1                 = 0.6038
+car F1                  = 0.6481
+checkpoint              = runs/cam_smoke_256/checkpoints/last.pt
+checkpoint size         = 270 MB
+```
+
+这些是训练批次上的分类指标，不是独立验证结果，也不能代表 CAM 空间定位质量。下一步必须生成 CAM 热力图，人工确认目标定位后再进行融合。
+
+首批 CAM overlay 已完成人工检查。CAM 形成了局部热点，但多数类别只有少量离散响应，未覆盖完整区域；low vegetation 在车辆、硬质地面和屋顶附近出现错误响应，tree 与 low vegetation 以及其他共现类别的 CAM 也较为相似。这说明单父图、1 epoch 分类器存在明显的共现捷径。当前 CAM 仅适合继续做 5 patch 融合闭环测试，不适合直接作为 256 patch 正式伪标签。
+
+5 patch 融合闭环随后成功运行，但没有带来指标提升：strict mIoU 为 `0.4993`，strict foreground mIoU 为 `0.5990`，labeled coverage 为 `0.9062`。约 41.5 万像素被填成背景，而其中只有 323 个是真背景，background IoU 仅为 `0.00078`。这说明高覆盖率主要来自错误背景填充。当前 `background_threshold=0.2` 的 CAM 低响应排除策略判定失败，在重新设计背景门控前不得扩展到全部 256 patch。
+
+同一 5 patch 的公平 SAM3 Ignore255 基线为：labeled foreground mIoU `0.9064`、coverage `0.5866`。融合后 labeled foreground mIoU 降至 `0.6462`，coverage 升至 `0.9062`。像素统计显示 CAM 仅补充 4,185 个前景像素，而背景规则填充了 414,923 个像素。由此确认 SAM3-only 当前是高精度、低覆盖的有效伪标签源，失败点主要在 CAM 背景排除，而不是 SAM3 前景掩码。
+
+全部 256 patch 的背景阈值扫描也已完成。背景阈值从 `0.00` 增至 `0.20` 时，coverage 从 `0.5250` 增至 `0.8927`，但 labeled foreground mIoU 从 `0.6113` 降至 `0.4659`；strict foreground mIoU 始终约为 `0.4248`。`0.10` 虽得到最高总 mIoU `0.3858`，提升完全来自背景类别，不能据此认定 CAM 前景有效。当前只考虑 `0.00/0.01` 作为保守背景种子候选，并需进一步比较背景 precision/recall。
+
+背景 precision/recall 检查后，最终保守候选确定为 `background_threshold=0.00`：背景 precision `0.8875`、recall `0.0485`，得到 450,472 个正确背景种子。阈值提高到 `0.01` 时 precision 已降至 `0.5338`，不可用于高置信伪标签。下一步固定背景为 `0.00` 并扫描 CAM 前景阈值。
+
+前景阈值扫描显示，阈值从 `0.70` 升到 `1.00` 时，CAM 新增前景从 329,899 降至 531，labeled foreground mIoU 反而从 `0.6113` 恢复到 `0.6208`，接近 SAM3-only 的 `0.6213`。因此当前正式候选改为 `background_only`：SAM3 独占前景，CAM 只在所有正类响应恰为零的位置提供背景种子，其他区域仍为 `255`。full hybrid 保留为消融。
 
 ## 6. 关键代码入口
 
@@ -491,7 +522,7 @@ CUDA_VISIBLE_DEVICES=0,1 python -m sam3_remote_wsss.train_student \
 
 - 尚未把完整 Potsdam 数据集切成 patch。
 - 尚未建立按父图划分的正式 train/val/test 列表。
-- 尚未正式训练 CAM 分类器。
+- 已完成单父图 256 patch 的 1 epoch CAM smoke，尚未在完整父图划分上正式训练。
 - 尚未得到 CAM-only 和 CAM+SAM3 的真实伪标签指标。
 - 尚未完成 student 独立验证集推理、patch 拼接和最终 mIoU 闭环。
 - 尚未系统搜索 CAM 三个阈值。
@@ -511,10 +542,9 @@ Prompt4 驱动 SAM3 生成高精度但稀疏的前景伪标签，再用多标签
 
 SAM3-only 的 256 patch 已标注区域前景 mIoU 为 0.6213，覆盖率为 0.5133；
 但这 256 个 patch 只来自一个父图，只能视为 smoke。PromptBG 已验证失败。
-CAM/SAM3 代码和测试已经完成，但真实 CAM 训练与融合指标尚未运行。
+CAM/SAM3 代码和测试已经完成，CAM 分类器 1 epoch smoke 已运行，但 CAM 热力图检查与融合指标尚未完成。
 
 请基于现有实现继续，不要重新设计。先检查 Git 状态和服务器是否拉取最新提交，
 然后运行 256 patch CAM smoke、检查 CAM 可视化，再决定是否生成完整 Potsdam patch
 数据集并建立按父图划分的正式实验。
 ```
-

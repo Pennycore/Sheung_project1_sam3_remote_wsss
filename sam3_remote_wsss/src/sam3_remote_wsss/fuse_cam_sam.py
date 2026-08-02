@@ -26,6 +26,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--background-threshold", type=float, default=0.2)
     parser.add_argument("--foreground-threshold", type=float, default=0.7)
     parser.add_argument("--cam-support-threshold", type=float, default=0.3)
+    parser.add_argument(
+        "--background-only",
+        action="store_true",
+        help="Use CAMs only for background seeds; preserve all SAM3 foreground.",
+    )
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--skip-existing", action="store_true")
     return parser.parse_args()
@@ -73,6 +78,7 @@ def main() -> None:
             foreground_threshold=args.foreground_threshold,
             cam_support_threshold=args.cam_support_threshold,
             ignore_index=config.ignore_index,
+            background_only=args.background_only,
         )
         image = read_rgbir_as_rgb(item.image_path, config.rgb_band_indices)
         save_label_png(fused, output_dir / "pseudo_labels" / f"{image_id}.png")
@@ -85,6 +91,7 @@ def main() -> None:
         ids, counts = np.unique(fused, return_counts=True)
         metadata = {
             "image_id": image_id,
+            "fusion_mode": "background_only" if args.background_only else "hybrid",
             "positive_classes": sorted(image_level[image_id]),
             "thresholds": {
                 "background": args.background_threshold,

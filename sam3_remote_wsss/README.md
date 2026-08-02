@@ -344,19 +344,24 @@ python -m sam3_remote_wsss.fuse_cam_sam \
   --sam-pseudo-label-dir runs/sam3_prompt4_ignore255/pseudo_labels \
   --cam-dir runs/cam_resnet50/cams \
   --output-dir runs/cam_sam_fused \
-  --background-threshold 0.2 \
-  --foreground-threshold 0.7 \
-  --cam-support-threshold 0.3
+  --background-threshold 0.0 \
+  --background-only
 ```
 
-The fusion policy is conservative:
+The recommended fusion policy is conservative: SAM3 owns all foreground labels,
+while CAMs add background only where every active foreground channel is exactly
+zero. Other uncovered pixels remain `255`:
 
 ```text
-SAM3 foreground + no strong CAM conflict -> keep the SAM3 class
-no SAM3 mask + CAM >= foreground threshold -> fill from CAM
-no SAM3 mask + every CAM <= background threshold -> background 0
-strong CAM/SAM3 class conflict or intermediate confidence -> ignore 255
+SAM3 foreground                         -> keep the SAM3 class
+no SAM3 mask + every CAM == 0           -> background 0
+all other uncovered pixels              -> ignore 255
 ```
+
+Omit `--background-only` and set the foreground/support thresholds to reproduce
+the experimental full hybrid mode. On the current one-parent-tile smoke data,
+CAM foreground completion did not improve foreground mIoU, so it is retained as
+an ablation rather than the recommended pseudo-label source.
 
 Evaluate `runs/cam_sam_fused/pseudo_labels` with the same
 `evaluate_pseudo_labels` command used for the SAM3-only ablations. CAM training

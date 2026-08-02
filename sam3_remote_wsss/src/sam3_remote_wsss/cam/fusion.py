@@ -23,6 +23,7 @@ def fuse_cam_and_sam(
     foreground_threshold: float = 0.7,
     cam_support_threshold: float = 0.3,
     ignore_index: int = 255,
+    background_only: bool = False,
 ) -> np.ndarray:
     labels, _stats = fuse_cam_and_sam_with_stats(
         sam_label=sam_label,
@@ -33,6 +34,7 @@ def fuse_cam_and_sam(
         foreground_threshold=foreground_threshold,
         cam_support_threshold=cam_support_threshold,
         ignore_index=ignore_index,
+        background_only=background_only,
     )
     return labels
 
@@ -46,6 +48,7 @@ def fuse_cam_and_sam_with_stats(
     foreground_threshold: float = 0.7,
     cam_support_threshold: float = 0.3,
     ignore_index: int = 255,
+    background_only: bool = False,
 ) -> tuple[np.ndarray, dict[str, int]]:
     sam_label = np.asarray(sam_label, dtype=np.uint8)
     cams = np.nan_to_num(np.asarray(cams, dtype=np.float32), nan=0.0)
@@ -77,27 +80,33 @@ def fuse_cam_and_sam_with_stats(
     )
     cams[~active_channels] = 0.0
 
-    top_indices = cams.argmax(axis=0)
     max_scores = cams.max(axis=0)
-    top_classes = class_ids[top_indices]
     sam_foreground = np.isin(sam_label, list(positive_ids))
-
-    sam_cam_scores = np.zeros(sam_label.shape, dtype=np.float32)
-    for channel, class_id in enumerate(class_ids):
-        pixels = sam_label == class_id
-        sam_cam_scores[pixels] = cams[channel][pixels]
-
-    confident_cam = max_scores >= foreground_threshold
-    cam_disagrees = top_classes != sam_label
-    conflicts = (
-        sam_foreground
-        & confident_cam
-        & cam_disagrees
-        & (sam_cam_scores < cam_support_threshold)
-    )
-    keep_sam = sam_foreground & ~conflicts
-    fill_cam = ~sam_foreground & confident_cam
     fill_background = ~sam_foreground & (max_scores <= background_threshold)
+
+    if background_only:
+        conflicts = np.zeros(sam_label.shape, dtype=bool)
+        keep_sam = sam_foreground
+        fill_cam = np.zeros(sam_label.shape, dtype=bool)
+        top_classes = np.zeros(sam_label.shape, dtype=np.int64)
+    else:
+        top_indices = cams.argmax(axis=0)
+        top_classes = class_ids[top_indices]
+        sam_cam_scores = np.zeros(sam_label.shape, dtype=np.float32)
+        for channel, class_id in enumerate(class_ids):
+            pixels = sam_label == class_id
+            sam_cam_scores[pixels] = cams[channel][pixels]
+
+        confident_cam = max_scores >= foreground_threshold
+        cam_disagrees = top_classes != sam_label
+        conflicts = (
+            sam_foreground
+            & confident_cam
+            & cam_disagrees
+            & (sam_cam_scores < cam_support_threshold)
+        )
+        keep_sam = sam_foreground & ~conflicts
+        fill_cam = ~sam_foreground & confident_cam
 
     result = np.full(sam_label.shape, ignore_index, dtype=np.uint8)
     result[fill_background] = 0

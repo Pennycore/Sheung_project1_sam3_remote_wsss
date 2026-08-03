@@ -535,7 +535,7 @@ CUDA_VISIBLE_DEVICES=0,1 python -m sam3_remote_wsss.train_student \
 - 修复后的 SAM3 Prompt4 已覆盖全部 4,352 个训练 patch：foreground mIoU 0.4589、labeled foreground mIoU 0.6356、coverage 0.6139、skipped 0。
 - 修复标签后的正式 CAM 已重训完成：best epoch 20，validation macro-F1 0.9510；正式权重为 `runs/cam_resnet50_full_repaired/checkpoints/best.pt`。
 - 正式 background-only 融合已完成：mIoU 0.4085、foreground mIoU 0.4589、labeled mIoU 0.5822、coverage 0.6226、background IoU 0.1565。
-- Student 已具备父图隔离的逐 epoch GT 验证与 `best.pt` 选择，但尚未完成正式训练。
+- 正式 Student 已训练完成，best epoch 12：validation mIoU 0.4876、foreground mIoU 0.5493、pixel accuracy 0.6713。
 - 尚未完成 test 父图推理、patch 拼接和最终 mIoU 闭环。
 - 已在单父图 256 patch 上扫描背景和前景阈值，正式数据仍需复核。
 - 尚未完成完整 Prompt1/Prompt4/RemoteCLIP 排序消融。
@@ -558,6 +558,6 @@ CAM/SAM3 代码、CAM 热力图检查、阈值扫描、background-only 伪标签
 完整 Potsdam 已生成 9,472 个 patch，正式 split 为 4,352 train、1,536 val、3,584 test。`top_potsdam_4_12` 标签已修复，SAM3 与 CAM 已重建。正式 background-only 融合在 4,352 train patch 上得到 mIoU 0.4085、foreground mIoU 0.4589、coverage 0.6226、background IoU 0.1565。
 
 请基于现有实现继续，不要重新设计。先检查 Git 状态和服务器是否拉取最新提交，
-然后先运行带 GT validation 的 Student smoke，确认日志中出现 validation mIoU
-且同时生成 best.pt/last.pt；通过后再用 corrected_v2 融合标签正式训练 Student。
+然后使用 epoch 12 的 Student `best.pt` 运行父图拼接评估；先在一个完整 val
+父图上做工程 smoke，通过后一次性评估 14 个 test 父图，test 结果不用于调参。
 ```

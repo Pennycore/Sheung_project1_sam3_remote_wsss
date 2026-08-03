@@ -21,6 +21,7 @@ from sam3_remote_wsss.evaluate_pseudo_labels import (
     compute_evaluation_metrics,
     main as evaluate_main,
 )
+from sam3_remote_wsss.evaluate_student import PatchRecord, stitch_parent
 from sam3_remote_wsss.fusion import FusionCanvas
 from sam3_remote_wsss.fuse_cam_sam import (
     _prepare_fusion_output,
@@ -456,6 +457,48 @@ class CAMTrainingTests(unittest.TestCase):
 
 
 class StudentValidationTests(unittest.TestCase):
+    def test_parent_stitching_prefers_patch_centers_without_double_counting(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            prediction_root = root / "predictions"
+            label_root = root / "labels"
+            prediction_root.mkdir()
+            label_root.mkdir()
+            records = []
+            for image_id, x0, values in (
+                ("parent_x0000_y0000", 0, np.ones((2, 3), dtype=np.uint8)),
+                ("parent_x0001_y0000", 1, np.full((2, 3), 2, dtype=np.uint8)),
+            ):
+                Image.fromarray(values, mode="L").save(
+                    prediction_root / f"{image_id}.png"
+                )
+                label_path = label_root / f"{image_id}_label.tif"
+                tifffile.imwrite(
+                    label_path,
+                    np.full((2, 3, 3), (255, 0, 0), dtype=np.uint8),
+                    photometric="rgb",
+                )
+                records.append(
+                    PatchRecord(
+                        image_id=image_id,
+                        parent_image_id="parent",
+                        label_path=label_path,
+                        x0=x0,
+                        y0=0,
+                        x1=x0 + 3,
+                        y1=2,
+                    )
+                )
+            config = parse_config(_config(root))
+
+            prediction, label = stitch_parent(records, prediction_root, config)
+
+            np.testing.assert_array_equal(
+                prediction,
+                np.asarray([[1, 1, 2, 2], [1, 1, 2, 2]], dtype=np.uint8),
+            )
+            np.testing.assert_array_equal(label, np.zeros((2, 4), dtype=np.uint8))
+
     def test_segmentation_metrics_report_background_and_foreground_iou(self) -> None:
         metrics = segmentation_metrics(
             np.asarray([[2, 0], [1, 1]], dtype=np.int64),

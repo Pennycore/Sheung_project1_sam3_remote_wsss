@@ -62,6 +62,7 @@ class PotsdamGroundTruthSegDataset:
         labels_csv: str | Path,
         image_size: int = 512,
         limit: int | None = None,
+        image_ids: set[str] | None = None,
         mean: tuple[float, float, float] = (0.485, 0.456, 0.406),
         std: tuple[float, float, float] = (0.229, 0.224, 0.225),
     ) -> None:
@@ -71,6 +72,14 @@ class PotsdamGroundTruthSegDataset:
             raise ImportError("Install torch before validating the student.") from exc
 
         selected_ids = set(read_image_level_csv(labels_csv))
+        if image_ids is not None:
+            unknown_ids = sorted(image_ids - selected_ids)
+            if unknown_ids:
+                raise ValueError(
+                    "Requested validation IDs are absent from the CSV: "
+                    f"{', '.join(unknown_ids[:5])}"
+                )
+            selected_ids &= image_ids
         discovered = {
             item.image_id: item for item in discover_potsdam_items(config)
         }

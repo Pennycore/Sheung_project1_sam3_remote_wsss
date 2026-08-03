@@ -638,6 +638,40 @@ accuracy；训练集仍只读取融合伪标签。程序按父图检查 train/va
 validation mIoU 保存 `best.pt`。正式 512 patch 每轮使用
 `--samples-per-image 1`，不再将每个现成 patch 重复采样 16 次。
 
+### 正式 SegFormer Student 训练
+
+```text
+日期: 2026-08-03
+训练: 4,352 train patches / CAM exact-zero + SAM3 Prompt4 伪标签
+验证: 1,536 val patches / 6 parent tiles / pixel GT only for evaluation
+模型: ResNet-50 encoder + SegFormer-style head
+初始化: 修复后的 CAM best checkpoint
+设备: 2 x NVIDIA 2080Ti, DataParallel, FP16 AMP
+轮数: 20
+best epoch: 12
+best train loss: 0.47851847912020545
+validation loss: 0.9688712566470107
+validation mIoU: 0.4875610471782705
+validation foreground mIoU: 0.5493236629082672
+validation pixel accuracy: 0.6713276483981132
+```
+
+```text
+validation class IoU:
+background:          0.17874796852828687
+impervious_surface:  0.47217184709328575
+building:            0.7663985480255381
+low_vegetation:      0.487684301912386
+tree:                0.4019231410478634
+car:                 0.6184404764622627
+```
+
+验证 mIoU 从 epoch 1 的 `0.3627` 上升到 epoch 12 的 `0.4876`，此后训练
+loss 继续下降，但验证 mIoU 回落到 epoch 20 的 `0.4520`，说明模型开始拟合
+伪标签噪声。最终模型必须使用 epoch 12 的 `best.pt`，不能使用 `last.pt`。
+building 表现最佳，background 和 tree 仍是主要瓶颈。下一步只用冻结的
+`best.pt` 在 test 父图上推理并拼接，test 结果不再用于调参。
+
 ## 后续实验记录模板
 
 ```text

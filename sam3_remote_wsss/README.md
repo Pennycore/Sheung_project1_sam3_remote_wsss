@@ -497,3 +497,25 @@ GT only for evaluation. Training still reads pseudo labels exclusively. The
 trainer rejects train/validation patches from the same parent tile and selects
 `best.pt` by validation mIoU. Existing logs and checkpoints are protected;
 choose a new output directory or explicitly pass `--overwrite-output`.
+
+## Step 6: Evaluate And Stitch The Student
+
+Use the parent-disjoint test CSV only after model selection is complete:
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1 python -m sam3_remote_wsss.evaluate_student \
+  --config "$FULL_ROOT/potsdam_patches_config.json" \
+  --labels-csv "$FULL_ROOT/image_level_labels_test.csv" \
+  --checkpoint runs/student_segformer_background_only_full_v1/checkpoints/best.pt \
+  --output-dir runs/student_segformer_background_only_full_v1/test_best \
+  --batch-size 8 \
+  --image-size 512 \
+  --num-workers 4 \
+  --data-parallel \
+  --amp
+```
+
+The evaluator reports both overlapping patch metrics and stitched parent-tile
+metrics. It resolves overlap by preferring predictions farther from patch
+boundaries, so each original Potsdam pixel contributes exactly once to the
+final confusion matrix. Use `stitched_metrics` as the final result.

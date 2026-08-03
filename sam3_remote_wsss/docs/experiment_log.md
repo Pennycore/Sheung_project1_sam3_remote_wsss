@@ -811,6 +811,38 @@ building `+0.0599`、low vegetation `+0.0482`、tree `-0.0032`、car
 `-0.0199`。因此 CAM 初始化总体有效，但收益集中在前三类大面积地物，并非
 所有类别一致改善。
 
+### 消融：去掉 CAM Exact-Zero 背景种子
+
+```text
+日期: 2026-08-04
+与主方法相比的唯一改动: 使用 SAM3 Prompt4-only 伪标签，不加入背景种子
+Student 初始化: CAM encoder（保持不变）
+损失/训练预算/划分: 与主方法保持不变
+best epoch: 12
+train loss: 0.2894199748441358
+validation loss: 1.283834427439918
+validation mIoU: 0.4539533188714562
+validation foreground mIoU: 0.5447439826457474
+validation pixel accuracy: 0.6763497795853379
+```
+
+```text
+validation class IoU:
+background:          0.0
+impervious_surface:  0.4662236303190551
+building:            0.7896597917577922
+low_vegetation:      0.5059507916902245
+tree:                0.3353462038254278
+car:                 0.626539495636237
+```
+
+加入 exact-zero 背景种子的主方法相对该消融将验证 mIoU 提高
+`0.0336077283`，foreground mIoU 提高 `0.0045796803`，pixel accuracy
+降低 `0.0050221312`。class IoU 变化为 background `+0.1787`、impervious
+surface `+0.0059`、building `-0.0233`、low vegetation `-0.0183`、tree
+`+0.0666`、car `-0.0081`。该策略的主要价值是使第六类 background 可学习，
+并明显减少 tree 混淆；它对标准五前景类的总体提升有限，且存在类别间取舍。
+
 ## 后续实验记录模板
 
 ```text

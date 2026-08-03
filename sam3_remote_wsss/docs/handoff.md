@@ -530,6 +530,7 @@ CUDA_VISIBLE_DEVICES=0,1 python -m sam3_remote_wsss.train_student \
 - 已建立 17/6/14 父图划分清单，尚未在服务器完成全量 patch 生成。
 - 完整父图划分上的正式 CAM 已训练完成；最佳为 epoch 19，validation macro-F1 0.9471。完整曲线因一次误启动被清空，但 `best.pt` 及最佳轮验证指标已保留。
 - 发现 `top_potsdam_4_12` 源标签颜色被有损处理，旧弱标签全为负；已用最近标准调色板验证可恢复（最大距离 70.44，阈值 80），因此旧正式 CAM 仅保留为无效数据诊断，修复 CSV 后必须重训。
+- 修复后的 SAM3 Prompt4 已覆盖全部 4,352 个训练 patch：foreground mIoU 0.4589、labeled foreground mIoU 0.6356、coverage 0.6139、skipped 0。下一步是重训 CAM。
 - 已完成单父图 CAM/SAM3 hybrid 和 background-only 指标，尚未在正式多父图划分上验证。
 - 尚未完成 student 独立验证集推理、patch 拼接和最终 mIoU 闭环。
 - 已在单父图 256 patch 上扫描背景和前景阈值，正式数据仍需复核。

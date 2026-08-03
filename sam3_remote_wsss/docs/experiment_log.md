@@ -536,6 +536,37 @@ car:                   914,098
 patch 当作全负样本，必须在修复 patch 标签与 image-level CSV 后重新训练；旧的
 4_12 SAM3 伪标签与 CAM 文件也不能进入最终融合。
 
+### 修复后的正式 SAM3 Prompt4 训练集伪标签
+
+```text
+日期: 2026-08-03
+数据: 4,352 train patches / 17 parent tiles
+输入 PNG: 4,352
+实际评估: 4,352
+跳过: 0
+mIoU: 0.3823913517215775
+foreground mIoU: 0.458869622065893
+labeled mIoU: 0.5296900681612295
+labeled foreground mIoU: 0.6356280817934754
+labeled coverage: 0.6139396288815666
+```
+
+```text
+strict class IoU:
+background:          0.0
+impervious_surface:  0.5475153584698246
+building:            0.5865863696478153
+low_vegetation:      0.26788723254099234
+tree:                0.13875136664466262
+car:                 0.7536077830261705
+```
+
+该结果是当前第一个覆盖全部 17 个训练父图且无静默跳过的正式 SAM3-only
+Prompt4 指标。SAM3 仍不直接生成背景，因此 background IoU 为 0；car、building
+和 impervious surface 较强，tree 与 low vegetation 是主要改进目标。下一步必须
+用修复后的 image-level CSV 重新训练 CAM，再评估 exact-zero background-only
+融合。
+
 ## 后续实验记录模板
 
 ```text

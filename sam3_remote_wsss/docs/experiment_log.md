@@ -779,6 +779,38 @@ background `0.1703`、building `0.1393`、car `0.1306`。后续方法改进优�
 面向 tree、low vegetation 与 impervious surface，building/car 暂不作为
 主要瓶颈。
 
+### 消融：去掉 CAM Encoder 初始化
+
+```text
+日期: 2026-08-04
+与主方法相比的唯一改动: Student 使用 ImageNet ResNet-50 初始化，不加载 CAM checkpoint
+伪标签: cam_sam_background_only_full_train_corrected_v2（保持不变）
+损失/训练预算/划分: 与主方法保持不变
+best epoch: 11
+train loss: 0.6141521892619922
+validation loss: 1.0520522979398568
+validation mIoU: 0.4625677122535825
+validation foreground mIoU: 0.5257087413776282
+validation pixel accuracy: 0.6295606943165989
+```
+
+```text
+validation class IoU:
+background:          0.1468625666333539
+impervious_surface:  0.43907346526679997
+building:            0.7065317692314996
+low_vegetation:      0.43947912271807404
+tree:                0.4051002338046895
+car:                 0.6383591158670779
+```
+
+加载 CAM encoder 的主方法相对该消融将验证 mIoU 提高 `0.0249933349`、
+foreground mIoU 提高 `0.0236149215`、pixel accuracy 提高 `0.0417669541`。
+class IoU 变化为 background `+0.0319`、impervious surface `+0.0331`、
+building `+0.0599`、low vegetation `+0.0482`、tree `-0.0032`、car
+`-0.0199`。因此 CAM 初始化总体有效，但收益集中在前三类大面积地物，并非
+所有类别一致改善。
+
 ## 后续实验记录模板
 
 ```text

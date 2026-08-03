@@ -537,6 +537,7 @@ CUDA_VISIBLE_DEVICES=0,1 python -m sam3_remote_wsss.train_student \
 - 正式 background-only 融合已完成：mIoU 0.4085、foreground mIoU 0.4589、labeled mIoU 0.5822、coverage 0.6226、background IoU 0.1565。
 - 正式 Student 已训练完成，best epoch 12：validation mIoU 0.4876、foreground mIoU 0.5493、pixel accuracy 0.6713。
 - 正式 test 已完成 14 个父图拼接：mIoU 0.5259、foreground mIoU 0.5983、pixel accuracy 0.7205；六类 IoU 为 0.1640/0.5966/0.7725/0.4656/0.4564/0.7007。
+- 同架构全监督上界已完成：best epoch 20；正式 14 张 test 父图拼接 mIoU 0.7318、foreground mIoU 0.8113、pixel accuracy 0.8821。当前 WSSS 的 mIoU/foreground mIoU 保留率分别为 71.87%/73.75%，最大类别缺口为 tree、low vegetation 和 impervious surface。
 - 已在单父图 256 patch 上扫描背景和前景阈值，正式数据仍需复核。
 - 尚未完成完整 Prompt1/Prompt4/RemoteCLIP 排序消融。
 - 尚未统计两张 2080Ti 上完整实验的运行时间和显存。

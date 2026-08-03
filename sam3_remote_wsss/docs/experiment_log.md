@@ -719,7 +719,7 @@ mIoU 提升 `0.0162688995`、pixel accuracy 提升 `0.0225373145`，且六类 Io
 
 ```text
 日期: 2026-08-04
-状态: 20 epochs 正式训练完成，等待锁定 test stitched 评估
+状态: 20 epochs 正式训练和锁定 test stitched 评估均已完成
 目的: 量化当前 WSSS Student 相对同一数据划分和网络结构全监督上界的差距
 训练: 4,352 train patches / pixel GT
 验证: 1,536 val patches / 6 parent tiles
@@ -756,6 +756,28 @@ stitched test 评估。训练入口以 `--train-labels-csv` 和
 提高 `0.1926960441`。全监督验证 mIoU 在 epoch 20 达到最高值，训练期间未
 出现 WSSS Student 在 epoch 12 后那样明显的伪标签噪声过拟合。为保持训练
 预算一致，本次上界仍固定为 20 epochs，不继续用验证集延长训练。
+
+```text
+stitched test metrics (14 parents / 504,000,000 pixels):
+mIoU:             0.7318
+foreground mIoU:  0.8113
+pixel accuracy:   0.8821
+
+stitched test class IoU:
+background:          0.3342
+impervious_surface:  0.8331
+building:            0.9118
+low_vegetation:      0.7265
+tree:                0.7536
+car:                 0.8313
+```
+
+当前 WSSS Student 的 stitched test mIoU 保留率为 `71.87%`，foreground
+mIoU 保留率为 `73.75%`。WSSS 相对全监督的 class IoU 缺口从大到小为
+tree `0.2972`、low vegetation `0.2610`、impervious surface `0.2365`、
+background `0.1703`、building `0.1393`、car `0.1306`。后续方法改进优先
+面向 tree、low vegetation 与 impervious surface，building/car 暂不作为
+主要瓶颈。
 
 ## 后续实验记录模板
 

@@ -155,6 +155,10 @@ bash scripts/run_two_2080ti.sh \
   runs/potsdam_sam3_2080ti
 ```
 
+Only patch IDs present in `--labels-csv` are processed. With two shards, the
+generator writes `summary_shard0.json` and `summary_shard1.json`; retries with
+`--skip-existing` preserve prior summary entries and complete missing outputs.
+
 Important config fields:
 
 - `sam3_repo`: path to the original SAM3 repository.

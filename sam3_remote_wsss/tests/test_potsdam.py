@@ -22,6 +22,7 @@ from sam3_remote_wsss.evaluate_pseudo_labels import (
     main as evaluate_main,
 )
 from sam3_remote_wsss.fusion import FusionCanvas
+from sam3_remote_wsss.generate_pseudo_labels import _merge_summaries
 from sam3_remote_wsss.potsdam import (
     discover_potsdam_items,
     image_level_from_label,
@@ -87,6 +88,27 @@ class PotsdamMappingTests(unittest.TestCase):
 
 
 class PseudoLabelPolicyTests(unittest.TestCase):
+    def test_shard_summaries_merge_without_losing_existing_items(self) -> None:
+        merged = _merge_summaries(
+            [
+                {"image_id": "patch_b", "kept_masks": 1},
+                {"image_id": "patch_a", "kept_masks": 2},
+            ],
+            [
+                {"image_id": "patch_b", "kept_masks": 3},
+                {"image_id": "patch_c", "kept_masks": 4},
+            ],
+        )
+
+        self.assertEqual(
+            merged,
+            [
+                {"image_id": "patch_a", "kept_masks": 2},
+                {"image_id": "patch_b", "kept_masks": 3},
+                {"image_id": "patch_c", "kept_masks": 4},
+            ],
+        )
+
     def test_prompted_background_config_is_parsed(self) -> None:
         raw = _config(Path("/tmp/potsdam"))
         raw["background_prompting"] = {

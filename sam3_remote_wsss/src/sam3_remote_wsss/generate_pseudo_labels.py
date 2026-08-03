@@ -187,7 +187,11 @@ def main() -> None:
         output_dir=args.output_dir,
         dry_run=args.dry_run,
     )
-    items = discover_potsdam_items(labeler.config)
+    items = [
+        item
+        for item in discover_potsdam_items(labeler.config)
+        if item.image_id in labeler.image_level
+    ]
     if args.image_id:
         wanted = set(args.image_id)
         items = [item for item in items if item.image_id in wanted]
@@ -217,8 +221,26 @@ def main() -> None:
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / "summary.json").write_text(json.dumps(summaries, indent=2), encoding="utf-8")
+    summary_name = (
+        "summary.json"
+        if args.num_shards == 1
+        else f"summary_shard{args.shard_index}.json"
+    )
+    summary_path = output_dir / summary_name
+    if args.skip_existing and summary_path.exists():
+        previous = json.loads(summary_path.read_text(encoding="utf-8"))
+        summaries = _merge_summaries(previous, summaries)
+    summary_path.write_text(json.dumps(summaries, indent=2), encoding="utf-8")
     print(f"Processed {len(items)} images. Outputs: {output_dir}")
+
+
+def _merge_summaries(previous: list[dict], current: list[dict]) -> list[dict]:
+    by_image_id = {
+        str(item["image_id"]): item
+        for item in previous + current
+        if "image_id" in item
+    }
+    return [by_image_id[image_id] for image_id in sorted(by_image_id)]
 
 
 if __name__ == "__main__":

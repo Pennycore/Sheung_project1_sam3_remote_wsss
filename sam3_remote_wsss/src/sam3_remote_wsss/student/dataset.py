@@ -444,3 +444,124 @@ class PotsdamPseudoSegDataset:
         result[:, :-1] |= mask[:, 1:]
         result[:, 1:] |= mask[:, :-1]
         return result
+
+
+class PotsdamGroundTruthTrainDataset(PotsdamPseudoSegDataset):
+    """Train on pixel GT with the same spatial and image augmentations as WSSS."""
+
+    def __init__(
+        self,
+        config: ProjectConfig,
+        labels_csv: str | Path,
+        crop_size: int = 512,
+        samples_per_image: int = 1,
+        random_crop: bool = True,
+        limit: int | None = None,
+        mean: tuple[float, float, float] = (0.485, 0.456, 0.406),
+        std: tuple[float, float, float] = (0.229, 0.224, 0.225),
+        augment: bool = True,
+        scale_range: tuple[float, float] = (0.5, 2.0),
+        cat_max_ratio: float = 0.75,
+        max_crop_attempts: int = 10,
+        hflip_prob: float = 0.5,
+        vflip_prob: float = 0.5,
+        rotate90_prob: float = 0.5,
+        photometric_prob: float = 0.5,
+        blur_prob: float = 0.1,
+        min_valid_ratio: float = 0.05,
+        min_foreground_ratio: float = 0.001,
+    ) -> None:
+        try:
+            import torch
+        except ImportError as exc:
+            raise ImportError(
+                "Install torch before using PotsdamGroundTruthTrainDataset."
+            ) from exc
+
+        selected_ids = set(read_image_level_csv(labels_csv))
+        discovered = {
+            item.image_id: item for item in discover_potsdam_items(config)
+        }
+        missing_images = sorted(selected_ids - discovered.keys())
+        missing_labels = sorted(
+            image_id
+            for image_id in selected_ids & discovered.keys()
+            if discovered[image_id].label_path is None
+        )
+        if missing_images or missing_labels:
+            details = []
+            if missing_images:
+                details.append(
+                    f"missing images={len(missing_images)} "
+                    f"({', '.join(missing_images[:5])})"
+                )
+            if missing_labels:
+                details.append(
+                    f"missing labels={len(missing_labels)} "
+                    f"({', '.join(missing_labels[:5])})"
+                )
+            raise FileNotFoundError(
+                f"Training CSV {labels_csv} is incomplete: {'; '.join(details)}"
+            )
+        self.items = [
+            GroundTruthItem(
+                image_id,
+                discovered[image_id].image_path,
+                discovered[image_id].label_path,
+            )
+            for image_id in sorted(selected_ids)
+        ]
+        if limit is not None:
+            self.items = self.items[:limit]
+        if not self.items:
+            raise ValueError(f"No ground-truth items matched {labels_csv}")
+
+        self.config = config
+        self.crop_size = int(crop_size)
+        self.samples_per_image = max(1, int(samples_per_image))
+        self.random_crop = bool(random_crop)
+        self.mean = np.asarray(mean, dtype=np.float32)[:, None, None]
+        self.std = np.asarray(std, dtype=np.float32)[:, None, None]
+        self.augment = bool(augment)
+        self.scale_range = (float(scale_range[0]), float(scale_range[1]))
+        self.cat_max_ratio = float(cat_max_ratio)
+        self.max_crop_attempts = max(1, int(max_crop_attempts))
+        self.hflip_prob = float(hflip_prob)
+        self.vflip_prob = float(vflip_prob)
+        self.rotate90_prob = float(rotate90_prob)
+        self.photometric_prob = float(photometric_prob)
+        self.blur_prob = float(blur_prob)
+        self.min_valid_ratio = float(min_valid_ratio)
+        self.min_foreground_ratio = float(min_foreground_ratio)
+        self.num_classes = max(spec.id for spec in config.classes) + 1
+        self._torch = torch
+
+    def __getitem__(self, index: int) -> dict[str, object]:
+        item = self.items[index % len(self.items)]
+        image = read_rgbir_as_rgb(item.image_path, self.config.rgb_band_indices)
+        label = label_rgb_to_ids(
+            read_label_rgb(item.label_path),
+            self.config.classes,
+            self.config.ignore_index,
+            background_colors=self.config.background_colors,
+        )
+        if image.shape[:2] != label.shape[:2]:
+            raise ValueError(
+                f"Image/label size mismatch for {item.image_id}: "
+                f"{image.shape[:2]} vs {label.shape[:2]}"
+            )
+        image, label = self._prepare_pair(image, label)
+        image_tensor = image.transpose(2, 0, 1).astype(np.float32) / 255.0
+        image_tensor = (image_tensor - self.mean) / self.std
+        return {
+            "image": self._torch.from_numpy(np.ascontiguousarray(image_tensor)),
+            "label": self._torch.from_numpy(label.astype(np.int64)),
+            "image_id": item.image_id,
+        }
+
+    def _clean_pseudo_label(self, label: np.ndarray) -> np.ndarray:
+        # Full supervision keeps all valid GT pixels and exact class boundaries.
+        label = label.copy()
+        invalid = (label != self.config.ignore_index) & (label >= self.num_classes)
+        label[invalid] = self.config.ignore_index
+        return label

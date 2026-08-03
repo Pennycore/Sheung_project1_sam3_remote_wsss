@@ -10,16 +10,32 @@ import numpy as np
 
 from .config import load_config
 from .cam.model import load_encoder_from_cam_checkpoint
-from .student.dataset import PotsdamGroundTruthSegDataset, PotsdamPseudoSegDataset
+from .student.dataset import (
+    PotsdamGroundTruthSegDataset,
+    PotsdamGroundTruthTrainDataset,
+    PotsdamPseudoSegDataset,
+)
 from .student.losses import safe_cross_entropy, toco_seg_loss
 from .student.model import StudentSegmentor
 from .training_output import prepare_training_output
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Train a SegFormer-head segmentation student on SAM3 pseudo labels.")
+    parser = argparse.ArgumentParser(
+        description=(
+            "Train a SegFormer-head segmentor on WSSS pseudo labels or pixel GT."
+        )
+    )
     parser.add_argument("--config", required=True, help="Path to project JSON config.")
-    parser.add_argument("--pseudo-label-dir", required=True, help="Directory containing SAM3 pseudo-label PNGs.")
+    train_source = parser.add_mutually_exclusive_group(required=True)
+    train_source.add_argument(
+        "--pseudo-label-dir",
+        help="Directory containing WSSS pseudo-label PNGs.",
+    )
+    train_source.add_argument(
+        "--train-labels-csv",
+        help="Training split CSV whose corresponding pixel GT supplies an upper bound.",
+    )
     parser.add_argument(
         "--val-labels-csv",
         default=None,
@@ -69,6 +85,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-component-area", type=int, default=16)
     parser.add_argument("--ignore-boundary-width", type=int, default=1)
     parser.add_argument(
+        "--loss",
+        choices=["auto", "cross_entropy", "toco"],
+        default="auto",
+        help=(
+            "Training loss. auto uses ToCo for pseudo labels and cross-entropy "
+            "for pixel GT."
+        ),
+    )
+    parser.add_argument(
         "--selection-metric",
         choices=["miou", "foreground_miou"],
         default="miou",
@@ -109,26 +134,41 @@ def main() -> None:
         overwrite=args.overwrite_output,
     )
 
-    dataset = PotsdamPseudoSegDataset(
-        config=config,
-        pseudo_label_dir=args.pseudo_label_dir,
-        crop_size=args.crop_size,
-        samples_per_image=args.samples_per_image,
-        random_crop=True,
-        limit=args.limit,
-        augment=not args.no_augment,
-        scale_range=(args.scale_min, args.scale_max),
-        cat_max_ratio=args.cat_max_ratio,
-        max_crop_attempts=args.max_crop_attempts,
-        hflip_prob=args.hflip_prob,
-        vflip_prob=args.vflip_prob,
-        rotate90_prob=args.rotate90_prob,
-        photometric_prob=args.photometric_prob,
-        blur_prob=args.blur_prob,
-        min_valid_ratio=args.min_valid_ratio,
-        min_foreground_ratio=args.min_foreground_ratio,
-        min_component_area=args.min_component_area,
-        ignore_boundary_width=args.ignore_boundary_width,
+    common_dataset_args = {
+        "config": config,
+        "crop_size": args.crop_size,
+        "samples_per_image": args.samples_per_image,
+        "random_crop": True,
+        "limit": args.limit,
+        "augment": not args.no_augment,
+        "scale_range": (args.scale_min, args.scale_max),
+        "cat_max_ratio": args.cat_max_ratio,
+        "max_crop_attempts": args.max_crop_attempts,
+        "hflip_prob": args.hflip_prob,
+        "vflip_prob": args.vflip_prob,
+        "rotate90_prob": args.rotate90_prob,
+        "photometric_prob": args.photometric_prob,
+        "blur_prob": args.blur_prob,
+        "min_valid_ratio": args.min_valid_ratio,
+        "min_foreground_ratio": args.min_foreground_ratio,
+    }
+    if args.train_labels_csv:
+        dataset = PotsdamGroundTruthTrainDataset(
+            labels_csv=args.train_labels_csv,
+            **common_dataset_args,
+        )
+    else:
+        dataset = PotsdamPseudoSegDataset(
+            pseudo_label_dir=args.pseudo_label_dir,
+            min_component_area=args.min_component_area,
+            ignore_boundary_width=args.ignore_boundary_width,
+            **common_dataset_args,
+        )
+    loss_name = _resolve_training_loss(args)
+    supervision = "ground_truth" if args.train_labels_csv else "pseudo_label"
+    print(
+        f"training supervision={supervision} loss={loss_name} "
+        f"images={len(dataset.items)} samples={len(dataset)}"
     )
     device = torch.device(args.device if torch.cuda.is_available() or args.device == "cpu" else "cpu")
     loader = DataLoader(
@@ -214,7 +254,18 @@ def main() -> None:
             optimizer.zero_grad(set_to_none=True)
             with autocast(device_type=amp_device, enabled=args.amp and device.type == "cuda"):
                 logits = model(images)
-                loss = toco_seg_loss(logits, labels, ignore_index=config.ignore_index)
+                if loss_name == "cross_entropy":
+                    loss = safe_cross_entropy(
+                        logits,
+                        labels.long(),
+                        ignore_index=config.ignore_index,
+                    )
+                else:
+                    loss = toco_seg_loss(
+                        logits,
+                        labels,
+                        ignore_index=config.ignore_index,
+                    )
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
@@ -312,6 +363,12 @@ def compute_poly_lr(
 def set_optimizer_lr(optimizer, lr: float) -> None:
     for group in optimizer.param_groups:
         group["lr"] = lr
+
+
+def _resolve_training_loss(args: argparse.Namespace) -> str:
+    if args.loss != "auto":
+        return args.loss
+    return "cross_entropy" if args.train_labels_csv else "toco"
 
 
 _PATCH_SUFFIX = re.compile(r"_x\d+_y\d+$")
@@ -441,6 +498,10 @@ def save_checkpoint(
             "config_path": config_path,
             "loss": loss,
             "val_metrics": val_metrics,
+            "training_supervision": (
+                "ground_truth" if args.train_labels_csv else "pseudo_label"
+            ),
+            "training_loss": _resolve_training_loss(args),
             "model_args": {
                 "backbone": args.backbone,
                 "head": args.head,

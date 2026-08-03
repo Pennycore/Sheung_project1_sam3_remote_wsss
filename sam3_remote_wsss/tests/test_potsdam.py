@@ -46,7 +46,10 @@ from sam3_remote_wsss.train_cam import (
     _parent_image_id,
     _prepare_training_output,
 )
-from sam3_remote_wsss.student.dataset import PotsdamGroundTruthSegDataset
+from sam3_remote_wsss.student.dataset import (
+    PotsdamGroundTruthSegDataset,
+    PotsdamGroundTruthTrainDataset,
+)
 from sam3_remote_wsss.train_student import (
     _ensure_parent_disjoint as ensure_student_parent_disjoint,
     segmentation_metrics,
@@ -641,6 +644,23 @@ class PotsdamPatchDatasetTests(unittest.TestCase):
             self.assertEqual(tuple(gt_dataset[0]["label"].shape), (2, 2))
             self.assertEqual(
                 set(gt_dataset[0]["label"].numpy().reshape(-1).tolist()),
+                {2},
+            )
+
+            gt_train_dataset = PotsdamGroundTruthTrainDataset(
+                config=patch_config,
+                labels_csv=output_root / "image_level_labels_train.csv",
+                crop_size=2,
+                augment=False,
+                scale_range=(1.0, 1.0),
+                min_valid_ratio=0.0,
+                min_foreground_ratio=0.0,
+                cat_max_ratio=0.0,
+            )
+            self.assertEqual(len(gt_train_dataset), 4)
+            self.assertEqual(tuple(gt_train_dataset[0]["image"].shape), (3, 2, 2))
+            self.assertEqual(
+                set(gt_train_dataset[0]["label"].numpy().reshape(-1).tolist()),
                 {2},
             )
 

@@ -498,6 +498,38 @@ trainer rejects train/validation patches from the same parent tile and selects
 `best.pt` by validation mIoU. Existing logs and checkpoints are protected;
 choose a new output directory or explicitly pass `--overwrite-output`.
 
+### Fully Supervised Upper Bound
+
+Use the same train/validation split, model, augmentation, and evaluator with
+pixel GT to measure the WSSS model against a matched fully supervised upper
+bound. `--train-labels-csv` is mutually exclusive with `--pseudo-label-dir`.
+The default `--loss auto` selects ordinary cross-entropy for this mode.
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1 python -m sam3_remote_wsss.train_student \
+  --config "$FULL_ROOT/potsdam_patches_config.json" \
+  --train-labels-csv "$FULL_ROOT/image_level_labels_train.csv" \
+  --val-labels-csv "$FULL_ROOT/image_level_labels_val.csv" \
+  --output-dir runs/student_segformer_fully_supervised_full_v1 \
+  --epochs 20 \
+  --batch-size 8 \
+  --val-batch-size 8 \
+  --crop-size 512 \
+  --samples-per-image 1 \
+  --backbone resnet50 \
+  --head segformer \
+  --segformer-embed-dim 256 \
+  --output-stride 16 \
+  --pretrained-backbone \
+  --num-workers 4 \
+  --data-parallel \
+  --amp
+```
+
+Do not pass the CAM checkpoint to the primary fully supervised upper bound.
+After validation selects `best.pt`, evaluate it on the locked test split using
+the same stitched command in Step 6.
+
 ## Step 6: Evaluate And Stitch The Student
 
 Use the parent-disjoint test CSV only after model selection is complete:

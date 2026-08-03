@@ -715,6 +715,26 @@ mIoU 提升 `0.0162688995`、pixel accuracy 提升 `0.0225373145`，且六类 Io
 阈值或训练超参数。当前完整方法闭环的最终主指标为 stitched test mIoU
 `52.59%` 和 foreground mIoU `59.83%`。
 
+### 待执行：同架构全监督上界
+
+```text
+日期: 2026-08-04
+状态: 训练代码和单元测试已完成，等待服务器 smoke/full 运行
+目的: 量化当前 WSSS Student 相对同一数据划分和网络结构全监督上界的差距
+训练: 4,352 train patches / pixel GT
+验证: 1,536 val patches / 6 parent tiles
+测试: 3,584 patches / 14 parent tiles，仅在验证选定 best.pt 后执行一次
+模型: ResNet-50 encoder + SegFormer-style head
+初始化: ImageNet，不加载 CAM checkpoint
+损失: 标准 cross-entropy
+设备: 2 x NVIDIA 2080Ti / DataParallel / FP16 AMP
+```
+
+该实验使用与 WSSS Student 相同的父图划分、增强、20 epochs、验证选模和
+stitched test 评估。训练入口以 `--train-labels-csv` 和
+`--pseudo-label-dir` 区分全监督与弱监督来源，二者不能同时出现。检查点额外
+记录 `training_supervision` 和 `training_loss`，防止实验身份混淆。
+
 ## 后续实验记录模板
 
 ```text

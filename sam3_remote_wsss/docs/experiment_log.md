@@ -567,6 +567,36 @@ Prompt4 指标。SAM3 仍不直接生成背景，因此 background IoU 为 0；c
 用修复后的 image-level CSV 重新训练 CAM，再评估 exact-zero background-only
 融合。
 
+### 修复标签后的正式 CAM 重训
+
+```text
+日期: 2026-08-03
+数据: 4,352 train patches / 17 parents
+验证: 1,536 val patches / 6 parents
+模型: ResNet-50 CAM, output stride 16, ImageNet initialization
+设备: 2 x NVIDIA 2080Ti, DataParallel, AMP
+best epoch: 20
+train loss: 0.019860664512902183
+train macro-F1: 0.9894704174511879
+validation loss: 0.24388618000095144
+validation micro-F1: 0.9547477121988078
+validation macro-F1: 0.9509633993685762
+```
+
+```text
+validation per-class F1:
+impervious_surface: 0.9418960244648318
+building:           0.9590536851683349
+low_vegetation:     0.9790257104194858
+tree:               0.9545782263878875
+car:                0.9202633504023409
+```
+
+修复后 validation macro-F1 相比错误标签模型的 0.9471402 提升约 0.00382。
+正式 CAM checkpoint 改为
+`runs/cam_resnet50_full_repaired/checkpoints/best.pt`；旧 checkpoint 和旧 CAM
+不得进入最终融合。
+
 ## 后续实验记录模板
 
 ```text

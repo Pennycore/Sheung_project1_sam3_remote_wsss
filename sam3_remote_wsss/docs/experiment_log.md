@@ -472,9 +472,12 @@ checkpoint 选择: validation macro-F1 最大，val loss 用于同分决胜
 
 `train_cam` 现在记录 train/validation loss、micro-F1、macro-F1 和每类 F1，
 并从 patch ID 反推父图 ID，发现 train/validation 共享父图时直接终止。
-验证集关闭随机增强。新运行会清空同目录的旧 `train_log.jsonl`，防止多次独立
-运行的 epoch 被误读为一次连续训练。正式生成 CAM 时必须使用 `best.pt`，不能
-根据训练 F1 选择 `last.pt`。
+验证集关闭随机增强。正式生成 CAM 时必须使用 `best.pt`，不能根据训练 F1 选择
+`last.pt`。
+
+一次误启动暴露了输出覆盖风险：原实现会在启动时清空同目录的
+`train_log.jsonl`。现已改为发现 `train_log.jsonl`、`best.pt` 或 `last.pt` 时拒绝
+启动；只有显式传入 `--overwrite-output` 才会替换。控制台日志应使用 `tee -a`。
 
 ## 后续实验记录模板
 

@@ -339,8 +339,12 @@ CUDA_VISIBLE_DEVICES=0,1 python -m sam3_remote_wsss.train_cam \
 Validation is deterministic and parent-disjoint. The trainer refuses shared
 parent tiles, logs validation loss plus micro/macro/per-class F1, and selects
 `checkpoints/best.pt` by validation macro-F1 (validation loss breaks ties).
-Training F1 is diagnostic only. A fresh run clears an existing `train_log.jsonl`
-because resume training is not implemented.
+Training F1 is diagnostic only. The trainer refuses to reuse an output directory
+containing `train_log.jsonl`, `best.pt`, or `last.pt`, because resume training is
+not implemented. Use a new output directory for each run. The destructive
+`--overwrite-output` flag is available only for an intentional replacement.
+When mirroring console output, use `tee -a` so the shell does not truncate an
+existing console log before the trainer can perform this check.
 
 Generate normalized multi-scale CAMs:
 

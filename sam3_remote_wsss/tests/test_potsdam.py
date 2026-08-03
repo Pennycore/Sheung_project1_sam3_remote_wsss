@@ -37,6 +37,7 @@ from sam3_remote_wsss.train_cam import (
     _ensure_parent_disjoint,
     _f1_metrics,
     _parent_image_id,
+    _prepare_training_output,
 )
 
 
@@ -291,6 +292,34 @@ class CAMTrainingTests(unittest.TestCase):
             ["top_potsdam_2_10_x0000_y0000"],
             ["top_potsdam_2_11_x0000_y0000"],
         )
+
+    def test_cam_training_output_requires_explicit_overwrite(self) -> None:
+        with TemporaryDirectory() as temporary:
+            output_dir = Path(temporary) / "cam"
+            checkpoint_dir = output_dir / "checkpoints"
+            checkpoint_dir.mkdir(parents=True)
+            best_path = checkpoint_dir / "best.pt"
+            best_path.write_bytes(b"existing checkpoint")
+            log_path = output_dir / "train_log.jsonl"
+            log_path.write_text("existing log\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(FileExistsError, "already contains"):
+                _prepare_training_output(output_dir)
+
+            self.assertEqual(best_path.read_bytes(), b"existing checkpoint")
+            self.assertEqual(
+                log_path.read_text(encoding="utf-8"),
+                "existing log\n",
+            )
+
+            returned_checkpoint_dir, returned_log_path = _prepare_training_output(
+                output_dir,
+                overwrite=True,
+            )
+            self.assertEqual(returned_checkpoint_dir, checkpoint_dir)
+            self.assertEqual(returned_log_path, log_path)
+            self.assertFalse(best_path.exists())
+            self.assertEqual(log_path.read_text(encoding="utf-8"), "")
 
 
 class PotsdamPatchDatasetTests(unittest.TestCase):

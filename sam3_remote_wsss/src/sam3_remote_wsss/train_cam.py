@@ -46,6 +46,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no-pos-weight", action="store_true")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--log-interval", type=int, default=20)
+    parser.add_argument(
+        "--overwrite-output",
+        action="store_true",
+        help="Explicitly replace existing CAM logs and checkpoints.",
+    )
     return parser.parse_args()
 
 
@@ -59,8 +64,10 @@ def main() -> None:
 
     config = load_config(args.config)
     output_dir = Path(args.output_dir)
-    checkpoint_dir = output_dir / "checkpoints"
-    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint_dir, log_path = _prepare_training_output(
+        output_dir,
+        overwrite=args.overwrite_output,
+    )
 
     dataset = PotsdamImageLevelDataset(
         config=config,
@@ -126,8 +133,6 @@ def main() -> None:
     scaler = GradScaler(amp_device, enabled=args.amp and device.type == "cuda")
     total_steps = max(1, args.epochs * len(loader))
     global_step = 0
-    log_path = output_dir / "train_log.jsonl"
-    log_path.write_text("", encoding="utf-8")
     best_macro_f1 = -1.0
     best_loss = float("inf")
 
@@ -281,6 +286,35 @@ def _set_seed(seed: int) -> None:
 
 
 _PATCH_SUFFIX = re.compile(r"_x\d+_y\d+$")
+
+
+def _prepare_training_output(
+    output_dir: Path,
+    overwrite: bool = False,
+) -> tuple[Path, Path]:
+    checkpoint_dir = output_dir / "checkpoints"
+    log_path = output_dir / "train_log.jsonl"
+    managed_paths = [
+        log_path,
+        checkpoint_dir / "best.pt",
+        checkpoint_dir / "last.pt",
+    ]
+    existing = [path for path in managed_paths if path.exists()]
+    if existing and not overwrite:
+        paths = ", ".join(str(path) for path in existing)
+        raise FileExistsError(
+            "CAM output already contains training artifacts: "
+            f"{paths}. Use a new --output-dir, or pass --overwrite-output "
+            "only when replacement is intentional."
+        )
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    if overwrite:
+        for path in existing:
+            path.unlink()
+    log_path.write_text("", encoding="utf-8")
+    return checkpoint_dir, log_path
 
 
 def _parent_image_id(image_id: str) -> str:

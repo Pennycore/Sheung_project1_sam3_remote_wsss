@@ -18,6 +18,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pseudo-label-dir", required=True, help="Directory containing pseudo-label PNGs.")
     parser.add_argument("--output", required=True, help="Output JSON metrics file.")
     parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument(
+        "--require-all",
+        action="store_true",
+        help="Return an error if any input PNG cannot be evaluated.",
+    )
     return parser.parse_args()
 
 
@@ -34,9 +39,27 @@ def main() -> None:
     gt_pixel_count = np.zeros(num_classes, dtype=np.int64)
     labeled_gt_pixel_count = np.zeros(num_classes, dtype=np.int64)
     evaluated = 0
+    skipped = {
+        "missing_item": 0,
+        "missing_label": 0,
+        "no_valid_gt": 0,
+    }
+    skipped_examples: dict[str, list[str]] = {
+        reason: [] for reason in skipped
+    }
+
+    def record_skip(reason: str, image_id: str) -> None:
+        skipped[reason] += 1
+        if len(skipped_examples[reason]) < 5:
+            skipped_examples[reason].append(image_id)
+
     for pseudo_path in tqdm(pseudo_paths, desc="evaluating"):
         item = item_by_id.get(pseudo_path.stem)
-        if item is None or item.label_path is None:
+        if item is None:
+            record_skip("missing_item", pseudo_path.stem)
+            continue
+        if item.label_path is None:
+            record_skip("missing_label", pseudo_path.stem)
             continue
         pred = np.asarray(Image.open(pseudo_path).convert("L"), dtype=np.uint8)
         gt = label_rgb_to_ids(
@@ -47,6 +70,7 @@ def main() -> None:
         )
         valid_gt = (gt != config.ignore_index) & (gt < num_classes)
         if not np.any(valid_gt):
+            record_skip("no_valid_gt", pseudo_path.stem)
             continue
         gt_pixel_count += np.bincount(gt[valid_gt], minlength=num_classes)
 
@@ -67,11 +91,21 @@ def main() -> None:
         labeled_gt_pixel_count,
         config,
     )
+    skipped_total = int(sum(skipped.values()))
+    metrics["input_pseudo_labels"] = len(pseudo_paths)
     metrics["evaluated_images"] = evaluated
+    metrics["skipped_images"] = skipped_total
+    metrics["skipped_reasons"] = skipped
+    metrics["skipped_examples"] = skipped_examples
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
     print(json.dumps(metrics, indent=2))
+    if args.require_all and skipped_total:
+        raise RuntimeError(
+            f"Could not evaluate {skipped_total}/{len(pseudo_paths)} pseudo labels: "
+            f"{skipped}"
+        )
 
 
 def compute_iou(

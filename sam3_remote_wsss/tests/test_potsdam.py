@@ -508,6 +508,17 @@ class PotsdamPatchDatasetTests(unittest.TestCase):
             metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
             self.assertEqual(metrics["class_iou"]["background"], 1.0)
             self.assertEqual(metrics["class_iou"]["building"], 1.0)
+            self.assertEqual(metrics["input_pseudo_labels"], 4)
+            self.assertEqual(metrics["evaluated_images"], 4)
+            self.assertEqual(metrics["skipped_images"], 0)
+            self.assertEqual(
+                metrics["skipped_reasons"],
+                {
+                    "missing_item": 0,
+                    "missing_label": 0,
+                    "no_valid_gt": 0,
+                },
+            )
 
     def test_parent_split_requires_every_parent_exactly_once(self) -> None:
         with TemporaryDirectory() as temporary:

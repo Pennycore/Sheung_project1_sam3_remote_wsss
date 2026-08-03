@@ -403,6 +403,10 @@ Evaluate `runs/cam_sam_fused/pseudo_labels` with the same
 and fusion consume only RGB imagery and image-level CSV labels; pixel GT stays
 isolated for offline evaluation.
 
+Evaluation JSON also reports `input_pseudo_labels`, `evaluated_images`, and
+explicit skip reasons/examples. Use `--require-all` for a strict run that fails
+when any PNG has no matching item, label, or valid Potsdam GT pixels.
+
 ## Step 5: Train A SegFormer-Head Student
 
 The project now includes a student segmentation model:

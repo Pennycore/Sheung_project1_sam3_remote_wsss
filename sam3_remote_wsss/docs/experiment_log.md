@@ -672,6 +672,49 @@ loss 继续下降，但验证 mIoU 回落到 epoch 20 的 `0.4520`，说明模�
 building 表现最佳，background 和 tree 仍是主要瓶颈。下一步只用冻结的
 `best.pt` 在 test 父图上推理并拼接，test 结果不再用于调参。
 
+### 锁定模型后的正式 Test 父图拼接评估
+
+```text
+日期: 2026-08-03
+checkpoint: Student epoch 12 best.pt
+test 数据: 3,584 patches / 14 parent tiles
+patch valid pixels: 939,524,096
+stitched unique parent pixels: 504,000,000
+跳过: 0
+```
+
+```text
+overlapping patch metrics:
+mIoU:             0.5091463330771208
+foreground mIoU:  0.5820734577720676
+pixel accuracy:   0.6979997807315418
+
+stitched parent metrics (final):
+mIoU:             0.5259467813363186
+foreground mIoU:  0.5983423572821176
+pixel accuracy:   0.7205370952380953
+```
+
+```text
+stitched test class IoU:
+background:          0.16396890160732308
+impervious_surface:  0.5966029324529248
+building:            0.772483803399172
+low_vegetation:      0.4655518490151158
+tree:                0.45640781136046266
+car:                 0.7006653901829129
+```
+
+中心权重拼接相对重叠 patch 统计将 mIoU 提升 `0.0168004483`、foreground
+mIoU 提升 `0.0162688995`、pixel accuracy 提升 `0.0225373145`，且六类 IoU
+全部提升。14 个父图 mIoU 范围为 `0.4521` 到 `0.5510`；最低为
+`top_potsdam_4_15`，最高为 `top_potsdam_5_15`。完整像素数恰好等于
+`14 x 6000 x 6000`，确认父图覆盖完整且每个原始像素只计一次。
+
+这是锁定 epoch 12 后的一次性正式 test 结果，不用于继续选择 checkpoint、
+阈值或训练超参数。当前完整方法闭环的最终主指标为 stitched test mIoU
+`52.59%` 和 foreground mIoU `59.83%`。
+
 ## 后续实验记录模板
 
 ```text

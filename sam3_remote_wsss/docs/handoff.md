@@ -536,7 +536,7 @@ CUDA_VISIBLE_DEVICES=0,1 python -m sam3_remote_wsss.train_student \
 - 修复标签后的正式 CAM 已重训完成：best epoch 20，validation macro-F1 0.9510；正式权重为 `runs/cam_resnet50_full_repaired/checkpoints/best.pt`。
 - 正式 background-only 融合已完成：mIoU 0.4085、foreground mIoU 0.4589、labeled mIoU 0.5822、coverage 0.6226、background IoU 0.1565。
 - 正式 Student 已训练完成，best epoch 12：validation mIoU 0.4876、foreground mIoU 0.5493、pixel accuracy 0.6713。
-- 尚未完成 test 父图推理、patch 拼接和最终 mIoU 闭环。
+- 正式 test 已完成 14 个父图拼接：mIoU 0.5259、foreground mIoU 0.5983、pixel accuracy 0.7205；六类 IoU 为 0.1640/0.5966/0.7725/0.4656/0.4564/0.7007。
 - 已在单父图 256 patch 上扫描背景和前景阈值，正式数据仍需复核。
 - 尚未完成完整 Prompt1/Prompt4/RemoteCLIP 排序消融。
 - 尚未统计两张 2080Ti 上完整实验的运行时间和显存。
@@ -549,15 +549,16 @@ CUDA_VISIBLE_DEVICES=0,1 python -m sam3_remote_wsss.train_student \
 请先阅读 sam3_remote_wsss/docs/handoff.md 和 README.md，再继续当前项目。
 
 这是一个 Potsdam image-level WSSS 工程。当前方法用 RemoteCLIP/B2C 风格
-Prompt4 驱动 SAM3 生成高精度但稀疏的前景伪标签，再用多标签 CAM 补充前景、
-通过低前景响应排除出背景，并将 CAM/SAM3 冲突置为 255，最终训练 SegFormer。
+Prompt4 驱动 SAM3 生成高精度但稀疏的前景伪标签，再用多标签 CAM 的
+exact-zero 响应生成保守背景种子，其余像素置为 255，最终训练 SegFormer。
 
 SAM3-only 的 256 patch 已标注区域前景 mIoU 为 0.6213，覆盖率为 0.5133；
 但这 256 个 patch 只来自一个父图，只能视为 smoke。PromptBG 已验证失败。
 CAM/SAM3 代码、CAM 热力图检查、阈值扫描、background-only 伪标签评估和双卡 student smoke 均已完成。当前最佳策略是 SAM3 负责前景、CAM exact-zero 负责高精度背景、其余像素为 255。
 完整 Potsdam 已生成 9,472 个 patch，正式 split 为 4,352 train、1,536 val、3,584 test。`top_potsdam_4_12` 标签已修复，SAM3 与 CAM 已重建。正式 background-only 融合在 4,352 train patch 上得到 mIoU 0.4085、foreground mIoU 0.4589、coverage 0.6226、background IoU 0.1565。
+Student best epoch 为 12，正式 14 张 test 父图拼接结果为 mIoU 0.5259、foreground mIoU 0.5983、pixel accuracy 0.7205。
 
 请基于现有实现继续，不要重新设计。先检查 Git 状态和服务器是否拉取最新提交，
-然后使用 epoch 12 的 Student `best.pt` 运行父图拼接评估；先在一个完整 val
-父图上做工程 smoke，通过后一次性评估 14 个 test 父图，test 结果不用于调参。
+完整训练与 test 闭环已经完成。下一步优先建立同一 split 和同一评估协议下的
+CAM-only、SAM3-only Student 及不加载 CAM encoder 消融，不再用 test 调参。
 ```

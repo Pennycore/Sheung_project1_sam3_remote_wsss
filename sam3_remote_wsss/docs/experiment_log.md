@@ -508,6 +508,34 @@ checkpoint: runs/cam_resnet50_full/checkpoints/best.pt
 recovered 目录后用于 CAM 生成。上述分类指标证明图像级分类器训练有效，但不能
 单独证明 CAM 空间定位质量；下一阶段仍需检查 CAM 可视化与伪标签 IoU。
 
+### `top_potsdam_4_12` 标签调色板恢复
+
+```text
+日期: 2026-08-03
+问题: 4_12 的 256 个 patch 在评估中全部 no_valid_gt
+源标签: 6000 x 6000 x 3, uint8, 无 TIFF 压缩，但颜色不是离散 Potsdam 调色板
+恢复策略: 每像素映射到最近的六类标准 RGB 颜色
+距离阈值: 80
+最大观测距离: 70.44146506142529
+超过阈值像素: 0
+最近与第二近颜色的最小抽样距离差: 154.21
+```
+
+恢复后恰好包含六种颜色，3,600 万像素全部完成映射：
+
+```text
+background:          1,020,265
+impervious_surface: 11,976,195
+building:           12,069,654
+low_vegetation:      7,267,176
+tree:                2,752,612
+car:                   914,098
+```
+
+该恢复具有清晰的最近颜色间隔，不是任意阈值猜测。旧正式 CAM 曾把这 256 个
+patch 当作全负样本，必须在修复 patch 标签与 image-level CSV 后重新训练；旧的
+4_12 SAM3 伪标签与 CAM 文件也不能进入最终融合。
+
 ## 后续实验记录模板
 
 ```text

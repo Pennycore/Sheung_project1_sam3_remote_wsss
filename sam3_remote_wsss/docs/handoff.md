@@ -540,6 +540,7 @@ CUDA_VISIBLE_DEVICES=0,1 python -m sam3_remote_wsss.train_student \
 - 同架构全监督上界已完成：best epoch 20；正式 14 张 test 父图拼接 mIoU 0.7318、foreground mIoU 0.8113、pixel accuracy 0.8821。当前 WSSS 的 mIoU/foreground mIoU 保留率分别为 71.87%/73.75%，最大类别缺口为 tree、low vegetation 和 impervious surface。
 - 去掉 CAM encoder 初始化的正式消融已完成：best epoch 11，validation mIoU 0.4626、foreground mIoU 0.5257、pixel accuracy 0.6296。相同伪标签下，CAM 初始化为主方法贡献约 +0.0250 mIoU 和 +0.0236 foreground mIoU。
 - 去掉 CAM exact-zero 背景种子的正式消融已完成：SAM3-only + CAM init 在 validation 上为 mIoU 0.4540、foreground mIoU 0.5447、background IoU 0。加入背景种子贡献约 +0.0336 mIoU，但 foreground mIoU 只增加 +0.0046，主要收益来自 background IoU 变为 0.1787 以及 tree IoU 提高 0.0666。
+- 完整 2×2 消融已完成：SAM3-only + ImageNet 的 validation mIoU/foreground mIoU 为 0.4681/0.5617；SAM3-only + CAM init 为 0.4540/0.5447；background + ImageNet 为 0.4626/0.5257；background + CAM init 主方法为 0.4876/0.5493。CAM 初始化与背景种子的 mIoU 正交互约为 +0.0392。主方法六类 mIoU 最佳，但五前景类指标低于 SAM3-only + ImageNet，需如实报告并继续改进前景融合。
 - 已在单父图 256 patch 上扫描背景和前景阈值，正式数据仍需复核。
 - 尚未完成完整 Prompt1/Prompt4/RemoteCLIP 排序消融。
 - 尚未统计两张 2080Ti 上完整实验的运行时间和显存。

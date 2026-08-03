@@ -843,6 +843,51 @@ surface `+0.0059`、building `-0.0233`、low vegetation `-0.0183`、tree
 `+0.0666`、car `-0.0081`。该策略的主要价值是使第六类 background 可学习，
 并明显减少 tree 混淆；它对标准五前景类的总体提升有限，且存在类别间取舍。
 
+### 消融：SAM3-Only + ImageNet 初始化
+
+```text
+日期: 2026-08-04
+伪标签: SAM3 Prompt4-only，不加入背景种子
+Student 初始化: ImageNet ResNet-50，不加载 CAM checkpoint
+损失/训练预算/划分: 与主方法保持不变
+best epoch: 4
+train loss: 0.39543757542474745
+validation loss: 1.0101072518154979
+validation mIoU: 0.46812475300810963
+validation foreground mIoU: 0.5617497036097315
+validation pixel accuracy: 0.7068264757049412
+```
+
+```text
+validation class IoU:
+background:          0.0
+impervious_surface:  0.5297253187771079
+building:            0.777956602004426
+low_vegetation:      0.5434054826563928
+tree:                0.3576415501948277
+car:                 0.6000195644159032
+```
+
+### Background × CAM 初始化 2×2 验证矩阵
+
+| Background seeds | CAM init | mIoU | foreground mIoU | pixel accuracy |
+| --- | --- | ---: | ---: | ---: |
+| no | no | 0.4681 | 0.5617 | 0.7068 |
+| no | yes | 0.4540 | 0.5447 | 0.6763 |
+| yes | no | 0.4626 | 0.5257 | 0.6296 |
+| yes | yes | **0.4876** | 0.5493 | 0.6713 |
+
+无背景种子时，CAM 初始化对 mIoU 的作用为 `-0.0141714341`；有背景种子时
+为 `+0.0249933349`，二者的 mIoU 交互项为 `+0.0391647691`。foreground
+mIoU 交互项为 `+0.0406206425`。这表明 CAM encoder 与 CAM exact-zero
+背景监督存在明显耦合：单独加载 CAM encoder 并不稳定，只有在训练标签也
+包含与其来源一致的背景证据时才产生正收益。
+
+同时，主方法相对真正 SAM3-only 基线的总 mIoU 提高 `0.0194362942`，但
+foreground mIoU 降低 `0.0124260407`。因此当前方法适合六类（包含
+background/clutter）目标，却尚未证明对 Potsdam 标准五前景类更优。上述
+差异目前来自单随机种子，后续需要重复种子确认交互是否稳定。
+
 ## 后续实验记录模板
 
 ```text

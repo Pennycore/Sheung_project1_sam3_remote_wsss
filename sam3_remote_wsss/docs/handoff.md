@@ -489,10 +489,11 @@ python -m sam3_remote_wsss.evaluate_pseudo_labels \
 
 ```bash
 CUDA_VISIBLE_DEVICES=0,1 python -m sam3_remote_wsss.train_student \
-  --config "$PATCH_ROOT/potsdam_patches_config_prompt4.json" \
-  --pseudo-label-dir runs/cam_sam_fused/pseudo_labels \
-  --cam-checkpoint runs/cam_resnet50/checkpoints/last.pt \
-  --output-dir runs/student_cam_sam_segformer \
+  --config "$FULL_ROOT/potsdam_patches_config.json" \
+  --pseudo-label-dir runs/cam_sam_background_only_full_train_corrected_v2/pseudo_labels \
+  --val-labels-csv "$FULL_ROOT/image_level_labels_val.csv" \
+  --cam-checkpoint runs/cam_resnet50_full_repaired/checkpoints/best.pt \
+  --output-dir runs/student_segformer_background_only_full \
   --epochs 20 \
   --batch-size 4 \
   --crop-size 512 \
@@ -500,7 +501,7 @@ CUDA_VISIBLE_DEVICES=0,1 python -m sam3_remote_wsss.train_student \
   --output-stride 16 \
   --head segformer \
   --segformer-embed-dim 256 \
-  --samples-per-image 16 \
+  --samples-per-image 1 \
   --cat-max-ratio 0.75 \
   --min-component-area 16 \
   --ignore-boundary-width 1 \
@@ -524,16 +525,18 @@ CUDA_VISIBLE_DEVICES=0,1 python -m sam3_remote_wsss.train_student \
 
 主要方法应以 F 为主，A/B/C/D/E/G 用于证明各模块贡献。
 
+验证集像素 GT 只参与逐 epoch 评估和 `best.pt` 选择，不进入 student 训练。
+训练器会拒绝共享父图的 train/val 划分，并保护已有日志和 checkpoint 不被误覆盖。
+
 ## 13. 尚未完成
 
-- 尚未把完整 Potsdam 数据集切成 patch。
-- 已建立 17/6/14 父图划分清单，尚未在服务器完成全量 patch 生成。
-- 完整父图划分上的正式 CAM 已训练完成；最佳为 epoch 19，validation macro-F1 0.9471。完整曲线因一次误启动被清空，但 `best.pt` 及最佳轮验证指标已保留。
 - 发现 `top_potsdam_4_12` 源标签颜色被有损处理，旧弱标签全为负；已用最近标准调色板验证可恢复（最大距离 70.44，阈值 80），因此旧正式 CAM 仅保留为无效数据诊断，修复 CSV 后必须重训。
-- 修复后的 SAM3 Prompt4 已覆盖全部 4,352 个训练 patch：foreground mIoU 0.4589、labeled foreground mIoU 0.6356、coverage 0.6139、skipped 0。下一步是重训 CAM。
-- 修复标签后的正式 CAM 已重训完成：best epoch 20，validation macro-F1 0.9510；正式权重为 `runs/cam_resnet50_full_repaired/checkpoints/best.pt`。下一步用该权重重建全部训练 CAM。
-- 已完成单父图 CAM/SAM3 hybrid 和 background-only 指标，尚未在正式多父图划分上验证。
-- 尚未完成 student 独立验证集推理、patch 拼接和最终 mIoU 闭环。
+- 完整 Potsdam 已生成 9,472 个 patch，并按父图划分为 4,352 train、1,536 val、3,584 test。
+- 修复后的 SAM3 Prompt4 已覆盖全部 4,352 个训练 patch：foreground mIoU 0.4589、labeled foreground mIoU 0.6356、coverage 0.6139、skipped 0。
+- 修复标签后的正式 CAM 已重训完成：best epoch 20，validation macro-F1 0.9510；正式权重为 `runs/cam_resnet50_full_repaired/checkpoints/best.pt`。
+- 正式 background-only 融合已完成：mIoU 0.4085、foreground mIoU 0.4589、labeled mIoU 0.5822、coverage 0.6226、background IoU 0.1565。
+- Student 已具备父图隔离的逐 epoch GT 验证与 `best.pt` 选择，但尚未完成正式训练。
+- 尚未完成 test 父图推理、patch 拼接和最终 mIoU 闭环。
 - 已在单父图 256 patch 上扫描背景和前景阈值，正式数据仍需复核。
 - 尚未完成完整 Prompt1/Prompt4/RemoteCLIP 排序消融。
 - 尚未统计两张 2080Ti 上完整实验的运行时间和显存。
@@ -552,9 +555,9 @@ Prompt4 驱动 SAM3 生成高精度但稀疏的前景伪标签，再用多标签
 SAM3-only 的 256 patch 已标注区域前景 mIoU 为 0.6213，覆盖率为 0.5133；
 但这 256 个 patch 只来自一个父图，只能视为 smoke。PromptBG 已验证失败。
 CAM/SAM3 代码、CAM 热力图检查、阈值扫描、background-only 伪标签评估和双卡 student smoke 均已完成。当前最佳策略是 SAM3 负责前景、CAM exact-zero 负责高精度背景、其余像素为 255。
-完整 Potsdam 已清点为 38 对父图/标签，正式 split 为 17 train、6 val、14 test、排除 7_10；下一步是生成 /home/undergr/remote_dataset/Postdam_patches_512_full。
+完整 Potsdam 已生成 9,472 个 patch，正式 split 为 4,352 train、1,536 val、3,584 test。`top_potsdam_4_12` 标签已修复，SAM3 与 CAM 已重建。正式 background-only 融合在 4,352 train patch 上得到 mIoU 0.4085、foreground mIoU 0.4589、coverage 0.6226、background IoU 0.1565。
 
 请基于现有实现继续，不要重新设计。先检查 Git 状态和服务器是否拉取最新提交，
-然后先生成完整 Potsdam patch 数据集并核对 17/6/14 数量，再用 train/val CSV
-正式训练 CAM。生成 CAM 时使用验证集选出的 best.pt，不再重复单父图 smoke。
+然后先运行带 GT validation 的 Student smoke，确认日志中出现 validation mIoU
+且同时生成 best.pt/last.pt；通过后再用 corrected_v2 融合标签正式训练 Student。
 ```

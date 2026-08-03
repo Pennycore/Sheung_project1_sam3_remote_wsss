@@ -8,7 +8,13 @@ import numpy as np
 from PIL import Image, ImageEnhance, ImageFilter
 
 from ..config import ProjectConfig
-from ..potsdam import discover_potsdam_items, read_rgbir_as_rgb
+from ..potsdam import (
+    discover_potsdam_items,
+    label_rgb_to_ids,
+    read_image_level_csv,
+    read_label_rgb,
+    read_rgbir_as_rgb,
+)
 
 
 _RESAMPLING = getattr(Image, "Resampling", Image)
@@ -19,6 +25,13 @@ class PseudoLabelItem:
     image_id: str
     image_path: Path
     pseudo_label_path: Path
+
+
+@dataclass(frozen=True)
+class GroundTruthItem:
+    image_id: str
+    image_path: Path
+    label_path: Path
 
 
 def discover_pseudo_label_items(
@@ -42,13 +55,116 @@ def discover_pseudo_label_items(
     return items
 
 
+class PotsdamGroundTruthSegDataset:
+    def __init__(
+        self,
+        config: ProjectConfig,
+        labels_csv: str | Path,
+        image_size: int = 512,
+        limit: int | None = None,
+        mean: tuple[float, float, float] = (0.485, 0.456, 0.406),
+        std: tuple[float, float, float] = (0.229, 0.224, 0.225),
+    ) -> None:
+        try:
+            import torch
+        except ImportError as exc:
+            raise ImportError("Install torch before validating the student.") from exc
+
+        selected_ids = set(read_image_level_csv(labels_csv))
+        discovered = {
+            item.image_id: item for item in discover_potsdam_items(config)
+        }
+        missing_images = sorted(selected_ids - discovered.keys())
+        missing_labels = sorted(
+            image_id
+            for image_id in selected_ids & discovered.keys()
+            if discovered[image_id].label_path is None
+        )
+        if missing_images or missing_labels:
+            details = []
+            if missing_images:
+                details.append(
+                    f"missing images={len(missing_images)} ({', '.join(missing_images[:5])})"
+                )
+            if missing_labels:
+                details.append(
+                    f"missing labels={len(missing_labels)} ({', '.join(missing_labels[:5])})"
+                )
+            raise FileNotFoundError(
+                f"Validation CSV {labels_csv} is incomplete: {'; '.join(details)}"
+            )
+        self.items = [
+            GroundTruthItem(
+                image_id,
+                discovered[image_id].image_path,
+                discovered[image_id].label_path,
+            )
+            for image_id in sorted(selected_ids)
+        ]
+        if limit is not None:
+            self.items = self.items[:limit]
+        if not self.items:
+            raise ValueError(f"No ground-truth items matched {labels_csv}")
+
+        self.config = config
+        self.image_size = int(image_size)
+        self.mean = np.asarray(mean, dtype=np.float32)[:, None, None]
+        self.std = np.asarray(std, dtype=np.float32)[:, None, None]
+        self._torch = torch
+
+    def __len__(self) -> int:
+        return len(self.items)
+
+    def __getitem__(self, index: int) -> dict[str, object]:
+        item = self.items[index]
+        image = read_rgbir_as_rgb(item.image_path, self.config.rgb_band_indices)
+        label = label_rgb_to_ids(
+            read_label_rgb(item.label_path),
+            self.config.classes,
+            self.config.ignore_index,
+            background_colors=self.config.background_colors,
+        )
+        if image.shape[:2] != label.shape[:2]:
+            raise ValueError(
+                f"Image/label size mismatch for {item.image_id}: "
+                f"{image.shape[:2]} vs {label.shape[:2]}"
+            )
+        if self.image_size > 0 and image.shape[:2] != (
+            self.image_size,
+            self.image_size,
+        ):
+            image_pil = Image.fromarray(image)
+            label_pil = Image.fromarray(label, mode="L")
+            image = np.asarray(
+                image_pil.resize(
+                    (self.image_size, self.image_size),
+                    _RESAMPLING.BILINEAR,
+                ),
+                dtype=np.uint8,
+            )
+            label = np.asarray(
+                label_pil.resize(
+                    (self.image_size, self.image_size),
+                    _RESAMPLING.NEAREST,
+                ),
+                dtype=np.uint8,
+            )
+        image_tensor = image.transpose(2, 0, 1).astype(np.float32) / 255.0
+        image_tensor = (image_tensor - self.mean) / self.std
+        return {
+            "image": self._torch.from_numpy(np.ascontiguousarray(image_tensor)),
+            "label": self._torch.from_numpy(label.astype(np.int64)),
+            "image_id": item.image_id,
+        }
+
+
 class PotsdamPseudoSegDataset:
     def __init__(
         self,
         config: ProjectConfig,
         pseudo_label_dir: str | Path,
         crop_size: int = 512,
-        samples_per_image: int = 16,
+        samples_per_image: int = 1,
         random_crop: bool = True,
         limit: int | None = None,
         mean: tuple[float, float, float] = (0.485, 0.456, 0.406),

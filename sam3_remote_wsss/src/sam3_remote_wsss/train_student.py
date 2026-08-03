@@ -3,26 +3,33 @@ from __future__ import annotations
 import argparse
 import json
 import random
+import re
 from pathlib import Path
 
 import numpy as np
 
 from .config import load_config
 from .cam.model import load_encoder_from_cam_checkpoint
-from .student.dataset import PotsdamPseudoSegDataset
-from .student.losses import toco_seg_loss
+from .student.dataset import PotsdamGroundTruthSegDataset, PotsdamPseudoSegDataset
+from .student.losses import safe_cross_entropy, toco_seg_loss
 from .student.model import StudentSegmentor
+from .training_output import prepare_training_output
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train a SegFormer-head segmentation student on SAM3 pseudo labels.")
     parser.add_argument("--config", required=True, help="Path to project JSON config.")
     parser.add_argument("--pseudo-label-dir", required=True, help="Directory containing SAM3 pseudo-label PNGs.")
+    parser.add_argument(
+        "--val-labels-csv",
+        default=None,
+        help="Optional parent-disjoint validation CSV with pixel GT available.",
+    )
     parser.add_argument("--output-dir", required=True, help="Training output directory.")
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--crop-size", type=int, default=512)
-    parser.add_argument("--samples-per-image", type=int, default=16)
+    parser.add_argument("--samples-per-image", type=int, default=1)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--weight-decay", type=float, default=1e-4)
     parser.add_argument("--poly-power", type=float, default=0.9)
@@ -42,6 +49,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--data-parallel", action="store_true", help="Use torch.nn.DataParallel when multiple CUDA devices are visible.")
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--limit", type=int, default=None, help="Optional number of source images for a smoke test.")
+    parser.add_argument("--val-limit", type=int, default=None)
+    parser.add_argument("--val-batch-size", type=int, default=None)
     parser.add_argument("--amp", action="store_true", help="Use CUDA FP16 mixed precision.")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--log-interval", type=int, default=20)
@@ -59,6 +68,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-foreground-ratio", type=float, default=0.001)
     parser.add_argument("--min-component-area", type=int, default=16)
     parser.add_argument("--ignore-boundary-width", type=int, default=1)
+    parser.add_argument(
+        "--selection-metric",
+        choices=["miou", "foreground_miou"],
+        default="miou",
+    )
+    parser.add_argument(
+        "--overwrite-output",
+        action="store_true",
+        help="Explicitly replace existing student logs and checkpoints.",
+    )
     return parser.parse_args()
 
 
@@ -84,8 +103,11 @@ def main() -> None:
 
     config = load_config(args.config)
     output_dir = Path(args.output_dir)
-    checkpoint_dir = output_dir / "checkpoints"
-    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint_dir, log_path = prepare_training_output(
+        output_dir,
+        experiment_name="Student",
+        overwrite=args.overwrite_output,
+    )
 
     dataset = PotsdamPseudoSegDataset(
         config=config,
@@ -138,19 +160,43 @@ def main() -> None:
             "initialized student encoder from CAM checkpoint "
             f"epoch={checkpoint.get('epoch', 'unknown')}"
         )
+
+    val_dataset = None
+    val_loader = None
+    if args.val_labels_csv:
+        val_dataset = PotsdamGroundTruthSegDataset(
+            config=config,
+            labels_csv=args.val_labels_csv,
+            image_size=args.crop_size,
+            limit=args.val_limit,
+        )
+        _ensure_parent_disjoint(
+            (item.image_id for item in dataset.items),
+            (item.image_id for item in val_dataset.items),
+        )
+        val_loader = DataLoader(
+            val_dataset,
+            batch_size=args.val_batch_size or args.batch_size,
+            shuffle=False,
+            num_workers=args.num_workers,
+            pin_memory=device.type == "cuda",
+            drop_last=False,
+        )
     model = model.to(device)
     if args.data_parallel and device.type == "cuda" and torch.cuda.device_count() > 1:
         model = torch.nn.DataParallel(model)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     amp_device = "cuda" if device.type == "cuda" else "cpu"
     scaler = GradScaler(amp_device, enabled=args.amp and device.type == "cuda")
-    log_path = output_dir / "train_log.jsonl"
     total_steps = max(1, args.epochs * len(loader))
     global_step = 0
+    best_score = float("-inf")
+    best_loss = float("inf")
 
     for epoch in range(1, args.epochs + 1):
         model.train()
         running_loss = 0.0
+        seen_samples = 0
         last_lr = args.lr
         for step, batch in enumerate(loader, start=1):
             lr = compute_poly_lr(
@@ -173,14 +219,29 @@ def main() -> None:
             scaler.step(optimizer)
             scaler.update()
 
-            running_loss += float(loss.detach().cpu())
+            current_batch_size = int(labels.shape[0])
+            running_loss += float(loss.detach().cpu()) * current_batch_size
+            seen_samples += current_batch_size
             global_step += 1
             if step % args.log_interval == 0:
-                avg = running_loss / step
+                avg = running_loss / max(1, seen_samples)
                 print(f"epoch={epoch} step={step}/{len(loader)} loss={avg:.4f} lr={lr:.6g}")
 
-        epoch_loss = running_loss / max(1, len(loader))
+        epoch_loss = running_loss / max(1, seen_samples)
         log_record = {"epoch": epoch, "loss": epoch_loss, "lr": last_lr}
+        val_metrics = None
+        if val_loader is not None:
+            val_metrics = evaluate_student(
+                model=model,
+                loader=val_loader,
+                device=device,
+                num_classes=num_classes,
+                ignore_index=config.ignore_index,
+                class_names=("background", *(spec.name for spec in config.classes)),
+                amp_enabled=args.amp and device.type == "cuda",
+                amp_device=amp_device,
+            )
+            log_record["validation"] = val_metrics
         with log_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(log_record) + "\n")
         save_checkpoint(
@@ -191,8 +252,45 @@ def main() -> None:
             args=args,
             config_path=args.config,
             loss=epoch_loss,
+            val_metrics=val_metrics,
         )
-        print(f"epoch={epoch} loss={epoch_loss:.4f} checkpoint={checkpoint_dir / 'last.pt'}")
+        if val_metrics is not None:
+            raw_score = val_metrics[args.selection_metric]
+            selection_score = (
+                float(raw_score) if raw_score is not None else float("-inf")
+            )
+            selection_loss = float(val_metrics["loss"])
+        else:
+            selection_score = -epoch_loss
+            selection_loss = epoch_loss
+        is_best = selection_score > best_score or (
+            selection_score == best_score and selection_loss < best_loss
+        )
+        if is_best:
+            best_score = selection_score
+            best_loss = selection_loss
+            save_checkpoint(
+                checkpoint_dir / "best.pt",
+                model=model,
+                optimizer=optimizer,
+                epoch=epoch,
+                args=args,
+                config_path=args.config,
+                loss=epoch_loss,
+                val_metrics=val_metrics,
+            )
+        val_message = ""
+        if val_metrics is not None:
+            val_message = (
+                f" val_loss={val_metrics['loss']:.4f} "
+                f"val_miou={_format_metric(val_metrics['miou'])} "
+                "val_fg_miou="
+                f"{_format_metric(val_metrics['foreground_miou'])}"
+            )
+        print(
+            f"epoch={epoch} loss={epoch_loss:.4f}{val_message} "
+            f"best={is_best} checkpoint={checkpoint_dir / 'last.pt'}"
+        )
 
 
 def compute_poly_lr(
@@ -216,6 +314,111 @@ def set_optimizer_lr(optimizer, lr: float) -> None:
         group["lr"] = lr
 
 
+_PATCH_SUFFIX = re.compile(r"_x\d+_y\d+$")
+
+
+def _parent_image_id(image_id: str) -> str:
+    return _PATCH_SUFFIX.sub("", image_id)
+
+
+def _ensure_parent_disjoint(train_image_ids, val_image_ids) -> None:
+    train_parents = {_parent_image_id(image_id) for image_id in train_image_ids}
+    val_parents = {_parent_image_id(image_id) for image_id in val_image_ids}
+    overlap = sorted(train_parents & val_parents)
+    if overlap:
+        raise ValueError(
+            "Student train/validation splits share parent images: "
+            f"{', '.join(overlap[:5])}"
+        )
+
+
+def segmentation_metrics(
+    confusion: np.ndarray,
+    class_names: tuple[str, ...],
+) -> dict[str, object]:
+    class_iou: dict[str, float | None] = {}
+    valid_ious = []
+    foreground_ious = []
+    for class_id, name in enumerate(class_names):
+        true_positive = int(confusion[class_id, class_id])
+        false_positive = int(confusion[:, class_id].sum()) - true_positive
+        false_negative = int(confusion[class_id, :].sum()) - true_positive
+        denominator = true_positive + false_positive + false_negative
+        iou = None if denominator == 0 else true_positive / denominator
+        class_iou[name] = iou
+        if iou is not None:
+            valid_ious.append(iou)
+            if class_id != 0:
+                foreground_ious.append(iou)
+    total = int(confusion.sum())
+    return {
+        "class_iou": class_iou,
+        "miou": None if not valid_ious else float(np.mean(valid_ious)),
+        "foreground_miou": (
+            None if not foreground_ious else float(np.mean(foreground_ious))
+        ),
+        "pixel_accuracy": (
+            None if total == 0 else float(np.trace(confusion) / total)
+        ),
+        "confusion": confusion.tolist(),
+        "valid_pixels": total,
+    }
+
+
+def _format_metric(value: object) -> str:
+    return "n/a" if value is None else f"{float(value):.4f}"
+
+
+def evaluate_student(
+    model,
+    loader,
+    device,
+    num_classes: int,
+    ignore_index: int,
+    class_names: tuple[str, ...],
+    amp_enabled: bool,
+    amp_device: str,
+) -> dict[str, object]:
+    import torch
+    from torch.amp import autocast
+
+    model.eval()
+    confusion = np.zeros((num_classes, num_classes), dtype=np.int64)
+    running_loss = 0.0
+    seen_samples = 0
+    with torch.inference_mode():
+        for batch in loader:
+            images = batch["image"].to(device, non_blocking=True)
+            labels = batch["label"].to(device, non_blocking=True)
+            with autocast(device_type=amp_device, enabled=amp_enabled):
+                logits = model(images)
+                loss = safe_cross_entropy(
+                    logits,
+                    labels.long(),
+                    ignore_index,
+                )
+            batch_size = int(labels.shape[0])
+            running_loss += float(loss.detach().cpu()) * batch_size
+            seen_samples += batch_size
+
+            predictions = logits.argmax(dim=1)
+            valid = (labels != ignore_index) & (labels >= 0) & (labels < num_classes)
+            encoded = (
+                num_classes * labels[valid].to(torch.int64)
+                + predictions[valid].to(torch.int64)
+            )
+            counts = torch.bincount(
+                encoded,
+                minlength=num_classes * num_classes,
+            )
+            confusion += counts.reshape(num_classes, num_classes).cpu().numpy()
+
+    metrics = segmentation_metrics(confusion, class_names)
+    metrics["loss"] = running_loss / max(1, seen_samples)
+    metrics["evaluated_images"] = len(loader.dataset)
+    return metrics
+
+
 def save_checkpoint(
     path: Path,
     model,
@@ -224,17 +427,27 @@ def save_checkpoint(
     args: argparse.Namespace,
     config_path: str,
     loss: float,
+    val_metrics: dict[str, object] | None,
 ) -> None:
     import torch
 
+    unwrapped = model.module if isinstance(model, torch.nn.DataParallel) else model
     torch.save(
         {
-            "model": model.state_dict(),
+            "model": unwrapped.state_dict(),
             "optimizer": optimizer.state_dict(),
             "epoch": epoch,
             "args": vars(args),
             "config_path": config_path,
             "loss": loss,
+            "val_metrics": val_metrics,
+            "model_args": {
+                "backbone": args.backbone,
+                "head": args.head,
+                "output_stride": args.output_stride,
+                "segformer_embed_dim": args.segformer_embed_dim,
+                "dropout_ratio": args.dropout_ratio,
+            },
         },
         path,
     )

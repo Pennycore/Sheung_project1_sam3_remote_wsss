@@ -214,6 +214,7 @@ find runs/potsdam_sam3_2080ti/pseudo_labels -name '*.png' | wc -l
 CUDA_VISIBLE_DEVICES=0,1 python -m sam3_remote_wsss.train_student \
   --config "$SAM3_WSSS_CONFIG" \
   --pseudo-label-dir runs/potsdam_sam3_2080ti/pseudo_labels \
+  --val-labels-csv "$SAM3_WSSS_PATCH_ROOT/image_level_labels_val.csv" \
   --output-dir runs/student_segformer_resnet50 \
   --epochs 20 \
   --batch-size 8 \
@@ -221,7 +222,7 @@ CUDA_VISIBLE_DEVICES=0,1 python -m sam3_remote_wsss.train_student \
   --output-stride 16 \
   --head segformer \
   --segformer-embed-dim 256 \
-  --samples-per-image 16 \
+  --samples-per-image 1 \
   --cat-max-ratio 0.75 \
   --min-component-area 16 \
   --ignore-boundary-width 1 \

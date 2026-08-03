@@ -452,7 +452,7 @@ Train on SAM3 pseudo labels:
 python -m sam3_remote_wsss.train_student ^
   --config configs/potsdam_sam3_only.json ^
   --pseudo-label-dir runs/cam_sam_fused/pseudo_labels ^
-  --cam-checkpoint runs/cam_resnet50/checkpoints/last.pt ^
+  --cam-checkpoint runs/cam_resnet50/checkpoints/best.pt ^
   --output-dir runs/student_segformer_resnet50 ^
   --epochs 20 ^
   --batch-size 4 ^
@@ -460,7 +460,7 @@ python -m sam3_remote_wsss.train_student ^
   --output-stride 16 ^
   --head segformer ^
   --segformer-embed-dim 256 ^
-  --samples-per-image 16 ^
+  --samples-per-image 1 ^
   --cat-max-ratio 0.75 ^
   --min-component-area 16 ^
   --ignore-boundary-width 1 ^
@@ -488,5 +488,12 @@ Student outputs:
 runs/student_segformer_resnet50
   train_log.jsonl
   checkpoints
+    best.pt
     last.pt
 ```
+
+When `--val-labels-csv` is supplied, validation uses the corresponding pixel
+GT only for evaluation. Training still reads pseudo labels exclusively. The
+trainer rejects train/validation patches from the same parent tile and selects
+`best.pt` by validation mIoU. Existing logs and checkpoints are protected;
+choose a new output directory or explicitly pass `--overwrite-output`.

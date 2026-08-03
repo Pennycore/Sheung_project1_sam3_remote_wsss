@@ -45,6 +45,11 @@ from sam3_remote_wsss.train_cam import (
     _parent_image_id,
     _prepare_training_output,
 )
+from sam3_remote_wsss.student.dataset import PotsdamGroundTruthSegDataset
+from sam3_remote_wsss.train_student import (
+    _ensure_parent_disjoint as ensure_student_parent_disjoint,
+    segmentation_metrics,
+)
 
 
 CLASSES = (
@@ -450,6 +455,32 @@ class CAMTrainingTests(unittest.TestCase):
             self.assertEqual(log_path.read_text(encoding="utf-8"), "")
 
 
+class StudentValidationTests(unittest.TestCase):
+    def test_segmentation_metrics_report_background_and_foreground_iou(self) -> None:
+        metrics = segmentation_metrics(
+            np.asarray([[2, 0], [1, 1]], dtype=np.int64),
+            ("background", "foreground"),
+        )
+
+        self.assertAlmostEqual(metrics["class_iou"]["background"], 2 / 3)
+        self.assertAlmostEqual(metrics["class_iou"]["foreground"], 1 / 2)
+        self.assertAlmostEqual(metrics["miou"], 7 / 12)
+        self.assertAlmostEqual(metrics["foreground_miou"], 1 / 2)
+        self.assertAlmostEqual(metrics["pixel_accuracy"], 3 / 4)
+
+    def test_student_validation_rejects_shared_parent_tiles(self) -> None:
+        with self.assertRaisesRegex(ValueError, "share parent images"):
+            ensure_student_parent_disjoint(
+                ["top_potsdam_2_10_x0000_y0000"],
+                ["top_potsdam_2_10_x0384_y0768"],
+            )
+
+        ensure_student_parent_disjoint(
+            ["top_potsdam_2_10_x0000_y0000"],
+            ["top_potsdam_2_11_x0000_y0000"],
+        )
+
+
 class PotsdamPatchDatasetTests(unittest.TestCase):
     def test_patch_dataset_is_discoverable_and_has_per_patch_tags(self) -> None:
         with TemporaryDirectory() as temporary:
@@ -556,6 +587,19 @@ class PotsdamPatchDatasetTests(unittest.TestCase):
             self.assertEqual(len(cam_dataset), 4)
             self.assertEqual(tuple(cam_dataset[0]["image"].shape), (3, 2, 2))
             self.assertEqual(float(cam_dataset[0]["target"][1]), 1.0)
+
+            gt_dataset = PotsdamGroundTruthSegDataset(
+                config=patch_config,
+                labels_csv=output_root / "image_level_labels_train.csv",
+                image_size=2,
+            )
+            self.assertEqual(len(gt_dataset), 4)
+            self.assertEqual(tuple(gt_dataset[0]["image"].shape), (3, 2, 2))
+            self.assertEqual(tuple(gt_dataset[0]["label"].shape), (2, 2))
+            self.assertEqual(
+                set(gt_dataset[0]["label"].numpy().reshape(-1).tolist()),
+                {2},
+            )
 
             pseudo_root = temporary_path / "pseudo"
             pseudo_root.mkdir()

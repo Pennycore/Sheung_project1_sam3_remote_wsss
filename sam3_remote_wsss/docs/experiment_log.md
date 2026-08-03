@@ -597,6 +597,47 @@ car:                0.9202633504023409
 `runs/cam_resnet50_full_repaired/checkpoints/best.pt`；旧 checkpoint 和旧 CAM
 不得进入最终融合。
 
+### 修复后的正式 CAM exact-zero / SAM3 融合
+
+```text
+日期: 2026-08-03
+数据: 4,352 train patches / 17 parent tiles
+SAM3 前景: runs/sam3_prompt4_full_train/pseudo_labels
+CAM: runs/cam_resnet50_full_repaired/cams_train
+融合输出: runs/cam_sam_background_only_full_train_corrected_v2
+规则: SAM3 前景保持不变；所有正类 CAM 恰为 0 的未标注像素设为背景；其余为 255
+输入/评估/跳过: 4,352 / 4,352 / 0
+mIoU: 0.40847412193741706
+foreground mIoU: 0.458869622065893
+labeled mIoU: 0.5822235522913067
+labeled foreground mIoU: 0.6348273459840041
+labeled coverage: 0.6225840843775693
+background IoU: 0.15649662129503694
+background pixels: 9,862,033
+SAM3 foreground pixels: 700,413,448
+ignored pixels: 430,575,207
+CAM foreground pixels: 0
+conflict pixels: 0
+```
+
+相对修复后的 SAM3-only 基线，foreground mIoU 完全不变；总 mIoU 提升
+`0.0260827702`，labeled mIoU 提升 `0.0525334841`，coverage 提升
+`0.0086444555`。labeled foreground mIoU 仅下降 `0.0008007358`，同时背景
+IoU 从 0 提升到 `0.15650`。这验证了当前核心假设：SAM3 负责高置信前景，
+CAM 只负责极保守背景种子，不能补充前景。
+
+第一次全量融合目录复用了旧结果并配合 `--skip-existing`，因此曾得到错误的旧
+CAM 指标。融合程序现已记录输入指纹并拒绝静默复用改变过的输入；正式 student
+只能使用上述 `corrected_v2` 输出。
+
+### Student 独立验证闭环
+
+Student 训练入口现支持 `--val-labels-csv`、`--val-limit` 和独立验证 batch
+size。验证集读取像素 GT 计算 class IoU、mIoU、foreground mIoU 与 pixel
+accuracy；训练集仍只读取融合伪标签。程序按父图检查 train/val 隔离，并默认以
+validation mIoU 保存 `best.pt`。正式 512 patch 每轮使用
+`--samples-per-image 1`，不再将每个现成 patch 重复采样 16 次。
+
 ## 后续实验记录模板
 
 ```text

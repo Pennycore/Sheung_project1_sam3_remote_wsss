@@ -373,7 +373,9 @@ python -m sam3_remote_wsss.fuse_cam_sam \
   --cam-dir runs/cam_resnet50_full/cams_train \
   --output-dir runs/cam_sam_background_only_full_train \
   --background-threshold 0.0 \
-  --background-only
+  --background-only \
+  --require-complete \
+  --skip-existing
 ```
 
 The recommended fusion policy is conservative: SAM3 owns all foreground labels,
@@ -385,6 +387,11 @@ SAM3 foreground                         -> keep the SAM3 class
 no SAM3 mask + every CAM == 0           -> background 0
 all other uncovered pixels              -> ignore 255
 ```
+
+`--require-complete` verifies that every image-level training row has both a
+SAM3 PNG and CAM NPZ before writing any fused output. On retries,
+`--skip-existing` reprocesses incomplete output triplets and rebuilds
+`summary.json` from all per-image metadata rather than only the current retry.
 
 Omit `--background-only` and set the foreground/support thresholds to reproduce
 the experimental full hybrid mode. On the current one-parent-tile smoke data,

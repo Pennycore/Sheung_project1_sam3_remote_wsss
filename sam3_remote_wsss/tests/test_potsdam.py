@@ -22,6 +22,7 @@ from sam3_remote_wsss.evaluate_pseudo_labels import (
     main as evaluate_main,
 )
 from sam3_remote_wsss.fusion import FusionCanvas
+from sam3_remote_wsss.fuse_cam_sam import _require_complete_inputs
 from sam3_remote_wsss.generate_pseudo_labels import _merge_summaries
 from sam3_remote_wsss.potsdam import (
     discover_potsdam_items,
@@ -194,6 +195,34 @@ class PseudoLabelPolicyTests(unittest.TestCase):
 
 
 class CAMFusionTests(unittest.TestCase):
+    def test_complete_fusion_inputs_are_required(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sam_dir = root / "sam"
+            cam_dir = root / "cam"
+            sam_dir.mkdir()
+            cam_dir.mkdir()
+            (sam_dir / "patch_a.png").write_bytes(b"png")
+            (cam_dir / "patch_b.npz").write_bytes(b"npz")
+
+            with self.assertRaisesRegex(
+                FileNotFoundError,
+                "missing SAM3=1.*missing CAM=1",
+            ):
+                _require_complete_inputs(
+                    {"patch_a", "patch_b"},
+                    sam_dir,
+                    cam_dir,
+                )
+
+            (cam_dir / "patch_a.npz").write_bytes(b"npz")
+            (sam_dir / "patch_b.png").write_bytes(b"png")
+            _require_complete_inputs(
+                {"patch_a", "patch_b"},
+                sam_dir,
+                cam_dir,
+            )
+
     def test_cam_normalization_is_per_class(self) -> None:
         cams = np.array(
             [

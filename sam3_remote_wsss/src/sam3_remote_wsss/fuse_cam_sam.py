@@ -33,6 +33,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--skip-existing", action="store_true")
+    parser.add_argument(
+        "--require-complete",
+        action="store_true",
+        help="Fail before fusion if any labeled image lacks a SAM3 PNG or CAM NPZ.",
+    )
     return parser.parse_args()
 
 
@@ -42,7 +47,14 @@ def main() -> None:
     image_level = read_image_level_csv(args.labels_csv)
     class_id_by_name = {spec.name: spec.id for spec in config.classes}
     item_by_id = {item.image_id: item for item in discover_potsdam_items(config)}
-    sam_paths = sorted(Path(args.sam_pseudo_label_dir).glob("*.png"))
+    expected_ids = set(image_level) & set(item_by_id)
+    sam_dir = Path(args.sam_pseudo_label_dir)
+    cam_dir = Path(args.cam_dir)
+    if args.require_complete:
+        _require_complete_inputs(expected_ids, sam_dir, cam_dir)
+    sam_paths = sorted(
+        path for path in sam_dir.glob("*.png") if path.stem in expected_ids
+    )
     if args.limit is not None:
         sam_paths = sam_paths[: args.limit]
     output_dir = Path(args.output_dir)
@@ -50,14 +62,18 @@ def main() -> None:
         sam_paths = [
             path
             for path in sam_paths
-            if not (output_dir / "pseudo_labels" / path.name).exists()
+            if not (
+                (output_dir / "pseudo_labels" / path.name).exists()
+                and (output_dir / "overlays" / f"{path.stem}.jpg").exists()
+                and (output_dir / "metadata" / f"{path.stem}.json").exists()
+            )
         ]
 
     summaries = []
     for sam_path in tqdm(sam_paths, desc="fusing CAM and SAM3"):
         image_id = sam_path.stem
         item = item_by_id.get(image_id)
-        cam_path = Path(args.cam_dir) / f"{image_id}.npz"
+        cam_path = cam_dir / f"{image_id}.npz"
         if item is None or image_id not in image_level or not cam_path.exists():
             continue
         sam_label = np.asarray(Image.open(sam_path).convert("L"), dtype=np.uint8)
@@ -110,11 +126,42 @@ def main() -> None:
         summaries.append(metadata)
 
     output_dir.mkdir(parents=True, exist_ok=True)
+    all_summaries = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in sorted((output_dir / "metadata").glob("*.json"))
+        if path.stem in expected_ids
+    ]
     (output_dir / "summary.json").write_text(
-        json.dumps(summaries, indent=2),
+        json.dumps(all_summaries, indent=2),
         encoding="utf-8",
     )
-    print(f"Fused {len(summaries)} images. Outputs: {output_dir}")
+    print(
+        f"Fused {len(summaries)} images this run; "
+        f"summary contains {len(all_summaries)} images. Outputs: {output_dir}"
+    )
+
+
+def _require_complete_inputs(
+    expected_ids: set[str],
+    sam_dir: Path,
+    cam_dir: Path,
+) -> None:
+    missing_sam = sorted(
+        image_id
+        for image_id in expected_ids
+        if not (sam_dir / f"{image_id}.png").exists()
+    )
+    missing_cam = sorted(
+        image_id
+        for image_id in expected_ids
+        if not (cam_dir / f"{image_id}.npz").exists()
+    )
+    if missing_sam or missing_cam:
+        raise FileNotFoundError(
+            "Incomplete fusion inputs: "
+            f"missing SAM3={len(missing_sam)} {missing_sam[:5]}, "
+            f"missing CAM={len(missing_cam)} {missing_cam[:5]}"
+        )
 
 
 if __name__ == "__main__":

@@ -35,6 +35,7 @@ from sam3_remote_wsss.prepare_potsdam_patches import (
     load_parent_split,
     prepare_patches,
 )
+from sam3_remote_wsss.repair_palette_label import repair_palette_label
 from sam3_remote_wsss.train_cam import (
     _ensure_parent_disjoint,
     _f1_metrics,
@@ -53,6 +54,60 @@ CLASSES = (
 
 
 class PotsdamMappingTests(unittest.TestCase):
+    def test_noisy_palette_label_is_repaired_with_distance_guard(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            input_path = root / "noisy.tif"
+            output_path = root / "repaired.tif"
+            noisy = np.asarray(
+                [
+                    [[250, 4, 3], [4, 5, 245]],
+                    [[5, 246, 247], [247, 248, 5]],
+                ],
+                dtype=np.uint8,
+            )
+            colors = np.asarray(
+                [
+                    [255, 0, 0],
+                    [0, 0, 255],
+                    [0, 255, 255],
+                    [255, 255, 0],
+                ],
+                dtype=np.uint8,
+            )
+            names = ["background", "building", "low_vegetation", "car"]
+            tifffile.imwrite(input_path, noisy, photometric="rgb")
+
+            report = repair_palette_label(
+                input_path,
+                output_path,
+                names,
+                colors,
+                max_distance=20.0,
+                chunk_rows=1,
+            )
+
+            np.testing.assert_array_equal(
+                tifffile.imread(output_path),
+                colors[np.asarray([[0, 1], [2, 3]])],
+            )
+            self.assertEqual(report["pixels_over_threshold"], 0)
+            self.assertEqual(
+                report["pixel_counts"],
+                {name: 1 for name in names},
+            )
+
+            guarded_output = root / "guarded.tif"
+            with self.assertRaisesRegex(ValueError, "Refusing palette repair"):
+                repair_palette_label(
+                    input_path,
+                    guarded_output,
+                    names,
+                    colors,
+                    max_distance=1.0,
+                )
+            self.assertFalse(guarded_output.exists())
+
     def test_background_maps_to_zero_and_unknown_stays_ignore(self) -> None:
         label = np.array(
             [[[255, 0, 0], [0, 0, 255], [12, 34, 56]]],

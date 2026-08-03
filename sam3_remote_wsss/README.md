@@ -112,6 +112,20 @@ This yields 9,472 patches: 4,352 train, 1,536 validation, and 3,584 test. The
 split validator rejects duplicate, unknown, or unassigned parent IDs so
 overlapping patches cannot leak between sets.
 
+If a source RGB label has noisy colors from an earlier lossy conversion, repair
+it to the nearest configured Potsdam palette without overwriting the source:
+
+```bash
+python -m sam3_remote_wsss.repair_palette_label \
+  --config configs/potsdam_server_prompt4.json \
+  --input /path/to/noisy_label.tif \
+  --output /path/to/repaired_label.tif \
+  --max-distance 80
+```
+
+The repair is written only when every pixel is within the distance guard. A
+JSON sidecar records maximum distance and per-class pixel counts.
+
 ## Step 1: Build Full-Image Labels (Legacy Baseline)
 
 For comparison with the earlier full-image baseline, derive one weak label row

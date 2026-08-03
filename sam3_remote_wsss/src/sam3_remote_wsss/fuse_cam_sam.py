@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 
@@ -58,6 +59,18 @@ def main() -> None:
     if args.limit is not None:
         sam_paths = sam_paths[: args.limit]
     output_dir = Path(args.output_dir)
+    provenance = _fusion_provenance(
+        config_path=Path(args.config),
+        labels_csv=Path(args.labels_csv),
+        sam_dir=sam_dir,
+        cam_dir=cam_dir,
+        background_threshold=args.background_threshold,
+        foreground_threshold=args.foreground_threshold,
+        cam_support_threshold=args.cam_support_threshold,
+        background_only=args.background_only,
+        limit=args.limit,
+    )
+    _prepare_fusion_output(output_dir, provenance)
     if args.skip_existing:
         sam_paths = [
             path
@@ -162,6 +175,89 @@ def _require_complete_inputs(
             f"missing SAM3={len(missing_sam)} {missing_sam[:5]}, "
             f"missing CAM={len(missing_cam)} {missing_cam[:5]}"
         )
+
+
+def _fusion_provenance(
+    config_path: Path,
+    labels_csv: Path,
+    sam_dir: Path,
+    cam_dir: Path,
+    background_threshold: float,
+    foreground_threshold: float,
+    cam_support_threshold: float,
+    background_only: bool,
+    limit: int | None,
+) -> dict[str, object]:
+    return {
+        "version": 1,
+        "config": _file_fingerprint(config_path),
+        "labels_csv": _file_fingerprint(labels_csv),
+        "sam_inputs": _directory_fingerprint(sam_dir, ".png"),
+        "cam_inputs": _directory_fingerprint(cam_dir, ".npz"),
+        "background_threshold": float(background_threshold),
+        "foreground_threshold": float(foreground_threshold),
+        "cam_support_threshold": float(cam_support_threshold),
+        "background_only": bool(background_only),
+        "limit": limit,
+    }
+
+
+def _file_fingerprint(path: Path) -> dict[str, object]:
+    return {
+        "path": str(path.resolve()),
+        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+    }
+
+
+def _directory_fingerprint(path: Path, suffix: str) -> dict[str, object]:
+    files = sorted(item for item in path.glob(f"*{suffix}") if item.is_file())
+    digest = hashlib.sha256()
+    total_size = 0
+    latest_mtime_ns = 0
+    for item in files:
+        stat = item.stat()
+        total_size += stat.st_size
+        latest_mtime_ns = max(latest_mtime_ns, stat.st_mtime_ns)
+        digest.update(item.name.encode("utf-8"))
+        digest.update(str(stat.st_size).encode("ascii"))
+        digest.update(str(stat.st_mtime_ns).encode("ascii"))
+    return {
+        "path": str(path.resolve()),
+        "suffix": suffix,
+        "count": len(files),
+        "total_size": total_size,
+        "latest_mtime_ns": latest_mtime_ns,
+        "manifest_sha256": digest.hexdigest(),
+    }
+
+
+def _prepare_fusion_output(
+    output_dir: Path,
+    provenance: dict[str, object],
+) -> None:
+    provenance_path = output_dir / "fusion_run.json"
+    has_outputs = any((output_dir / "pseudo_labels").glob("*.png")) or any(
+        (output_dir / "metadata").glob("*.json")
+    )
+    if has_outputs and not provenance_path.exists():
+        raise FileExistsError(
+            f"Fusion output contains legacy artifacts without provenance: {output_dir}. "
+            "Use a new --output-dir."
+        )
+    if provenance_path.exists():
+        existing = json.loads(provenance_path.read_text(encoding="utf-8"))
+        if existing != provenance:
+            raise ValueError(
+                f"Fusion inputs or settings changed for {output_dir}. "
+                "Use a new --output-dir instead of reusing stale outputs."
+            )
+        return
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    provenance_path.write_text(
+        json.dumps(provenance, indent=2),
+        encoding="utf-8",
+    )
 
 
 if __name__ == "__main__":

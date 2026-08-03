@@ -406,6 +406,9 @@ all other uncovered pixels              -> ignore 255
 SAM3 PNG and CAM NPZ before writing any fused output. On retries,
 `--skip-existing` reprocesses incomplete output triplets and rebuilds
 `summary.json` from all per-image metadata rather than only the current retry.
+Each output directory also stores `fusion_run.json` with input and setting
+fingerprints. Reusing an output directory after changing the labels, SAM3
+PNGs, CAM NPZs, thresholds, or fusion mode is rejected to prevent stale masks.
 
 Omit `--background-only` and set the foreground/support thresholds to reproduce
 the experimental full hybrid mode. On the current one-parent-tile smoke data,

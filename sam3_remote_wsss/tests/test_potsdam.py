@@ -22,7 +22,10 @@ from sam3_remote_wsss.evaluate_pseudo_labels import (
     main as evaluate_main,
 )
 from sam3_remote_wsss.fusion import FusionCanvas
-from sam3_remote_wsss.fuse_cam_sam import _require_complete_inputs
+from sam3_remote_wsss.fuse_cam_sam import (
+    _prepare_fusion_output,
+    _require_complete_inputs,
+)
 from sam3_remote_wsss.generate_pseudo_labels import _merge_summaries
 from sam3_remote_wsss.potsdam import (
     discover_potsdam_items,
@@ -250,6 +253,25 @@ class PseudoLabelPolicyTests(unittest.TestCase):
 
 
 class CAMFusionTests(unittest.TestCase):
+    def test_fusion_output_rejects_changed_or_untracked_inputs(self) -> None:
+        with TemporaryDirectory() as temporary:
+            output_dir = Path(temporary) / "fusion"
+            provenance = {"version": 1, "sam": "first"}
+
+            _prepare_fusion_output(output_dir, provenance)
+            _prepare_fusion_output(output_dir, provenance)
+            with self.assertRaisesRegex(ValueError, "inputs or settings changed"):
+                _prepare_fusion_output(
+                    output_dir,
+                    {"version": 1, "sam": "second"},
+                )
+
+            legacy_dir = Path(temporary) / "legacy"
+            (legacy_dir / "pseudo_labels").mkdir(parents=True)
+            (legacy_dir / "pseudo_labels" / "patch.png").write_bytes(b"png")
+            with self.assertRaisesRegex(FileExistsError, "without provenance"):
+                _prepare_fusion_output(legacy_dir, provenance)
+
     def test_complete_fusion_inputs_are_required(self) -> None:
         with TemporaryDirectory() as temporary:
             root = Path(temporary)

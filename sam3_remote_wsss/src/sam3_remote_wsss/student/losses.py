@@ -11,7 +11,13 @@ def safe_cross_entropy(pred: Tensor, label: Tensor, ignore_index: int = 255) -> 
     return pred.sum() * 0.0
 
 
-def toco_seg_loss(pred: Tensor, label: Tensor, ignore_index: int = 255) -> Tensor:
+def toco_seg_loss(
+    pred: Tensor,
+    label: Tensor,
+    ignore_index: int = 255,
+    background_weight: float = 1.0,
+    foreground_weight: float = 1.0,
+) -> Tensor:
     """ToCo-style balanced background/foreground segmentation loss.
 
     Original ToCo computes CE for background pixels and foreground pixels
@@ -24,11 +30,22 @@ def toco_seg_loss(pred: Tensor, label: Tensor, ignore_index: int = 255) -> Tenso
     fg_label = label.clone()
     fg_label[label == 0] = ignore_index
 
-    losses = []
-    if torch.any(bg_label != ignore_index):
-        losses.append(safe_cross_entropy(pred, bg_label, ignore_index))
-    if torch.any(fg_label != ignore_index):
-        losses.append(safe_cross_entropy(pred, fg_label, ignore_index))
-    if not losses:
+    weighted_losses: list[tuple[Tensor, float]] = []
+    if background_weight > 0 and torch.any(bg_label != ignore_index):
+        weighted_losses.append(
+            (
+                safe_cross_entropy(pred, bg_label, ignore_index),
+                float(background_weight),
+            )
+        )
+    if foreground_weight > 0 and torch.any(fg_label != ignore_index):
+        weighted_losses.append(
+            (
+                safe_cross_entropy(pred, fg_label, ignore_index),
+                float(foreground_weight),
+            )
+        )
+    if not weighted_losses:
         return pred.sum() * 0.0
-    return torch.stack(losses).mean()
+    total_weight = sum(weight for _loss, weight in weighted_losses)
+    return sum(loss * weight for loss, weight in weighted_losses) / total_weight

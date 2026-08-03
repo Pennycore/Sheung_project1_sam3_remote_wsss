@@ -94,6 +94,18 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--background-loss-weight",
+        type=float,
+        default=1.0,
+        help="Relative ToCo loss weight for labeled background pixels.",
+    )
+    parser.add_argument(
+        "--foreground-loss-weight",
+        type=float,
+        default=1.0,
+        help="Relative ToCo loss weight for labeled foreground pixels.",
+    )
+    parser.add_argument(
         "--selection-metric",
         choices=["miou", "foreground_miou"],
         default="miou",
@@ -165,10 +177,13 @@ def main() -> None:
             **common_dataset_args,
         )
     loss_name = _resolve_training_loss(args)
+    _validate_loss_weights(args, loss_name)
     supervision = "ground_truth" if args.train_labels_csv else "pseudo_label"
     print(
         f"training supervision={supervision} loss={loss_name} "
-        f"images={len(dataset.items)} samples={len(dataset)}"
+        f"images={len(dataset.items)} samples={len(dataset)} "
+        f"bg_loss_weight={args.background_loss_weight:g} "
+        f"fg_loss_weight={args.foreground_loss_weight:g}"
     )
     device = torch.device(args.device if torch.cuda.is_available() or args.device == "cpu" else "cpu")
     loader = DataLoader(
@@ -265,6 +280,8 @@ def main() -> None:
                         logits,
                         labels,
                         ignore_index=config.ignore_index,
+                        background_weight=args.background_loss_weight,
+                        foreground_weight=args.foreground_loss_weight,
                     )
             scaler.scale(loss).backward()
             scaler.step(optimizer)
@@ -369,6 +386,17 @@ def _resolve_training_loss(args: argparse.Namespace) -> str:
     if args.loss != "auto":
         return args.loss
     return "cross_entropy" if args.train_labels_csv else "toco"
+
+
+def _validate_loss_weights(args: argparse.Namespace, loss_name: str) -> None:
+    if args.background_loss_weight < 0 or args.foreground_loss_weight < 0:
+        raise ValueError("Segmentation loss weights must be non-negative")
+    if (
+        loss_name == "toco"
+        and args.background_loss_weight == 0
+        and args.foreground_loss_weight == 0
+    ):
+        raise ValueError("At least one ToCo segmentation loss weight must be positive")
 
 
 _PATCH_SUFFIX = re.compile(r"_x\d+_y\d+$")

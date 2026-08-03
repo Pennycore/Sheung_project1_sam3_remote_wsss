@@ -888,6 +888,27 @@ foreground mIoU 降低 `0.0124260407`。因此当前方法适合六类（包含
 background/clutter）目标，却尚未证明对 Potsdam 标准五前景类更优。上述
 差异目前来自单随机种子，后续需要重复种子确认交互是否稳定。
 
+### Background × CAM 初始化 2×2 锁定 Test 矩阵
+
+| Background seeds | CAM init | mIoU | foreground mIoU | pixel accuracy | background IoU |
+| --- | --- | ---: | ---: | ---: | ---: |
+| no | no | 0.5068 | **0.6082** | **0.7435** | 0.0000 |
+| no | yes | 0.4999 | 0.5999 | 0.7284 | 0.0000 |
+| yes | no | 0.5048 | 0.5716 | 0.6865 | **0.1706** |
+| yes | yes | **0.5259** | 0.5983 | 0.7205 | 0.1640 |
+
+test 结论与 validation 一致。主方法六类 mIoU 最佳；SAM3-only + ImageNet
+的五前景 mIoU 和 pixel accuracy 最佳。主方法相对后者提高 `0.0191` 六类
+mIoU，但降低 `0.0099` foreground mIoU 和 `0.0230` pixel accuracy。CAM
+初始化在有背景时贡献约 `+0.0211` test mIoU，在无背景时贡献约
+`-0.0069`，test 交互约为 `+0.0280`。
+
+按类比较，主方法相对 SAM3-only + ImageNet 提高 background `0.1640`、
+tree `0.0583` 和 car `0.0098`，但降低 impervious surface `0.0541`、
+building `0.0208` 和 low vegetation `0.0422`。下一步在固定主方法伪标签和
+CAM 初始化的条件下，仅扫描 ToCo background loss 权重，尝试保留背景/tree
+收益并恢复其余前景类。
+
 ## 后续实验记录模板
 
 ```text

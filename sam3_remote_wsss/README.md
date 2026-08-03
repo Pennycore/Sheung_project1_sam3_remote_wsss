@@ -530,6 +530,12 @@ Do not pass the CAM checkpoint to the primary fully supervised upper bound.
 After validation selects `best.pt`, evaluate it on the locked test split using
 the same stitched command in Step 6.
 
+For pseudo-label experiments, ToCo loss normally gives the separately averaged
+background and foreground terms equal weight. Use
+`--background-loss-weight` and `--foreground-loss-weight` for a predeclared
+validation-only sweep when sparse or noisy background seeds should contribute
+less. The defaults are both `1.0`, which exactly preserves prior experiments.
+
 ## Step 6: Evaluate And Stitch The Student
 
 Use the parent-disjoint test CSV only after model selection is complete:

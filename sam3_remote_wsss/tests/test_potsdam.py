@@ -50,6 +50,7 @@ from sam3_remote_wsss.student.dataset import (
     PotsdamGroundTruthSegDataset,
     PotsdamGroundTruthTrainDataset,
 )
+from sam3_remote_wsss.student.losses import safe_cross_entropy, toco_seg_loss
 from sam3_remote_wsss.train_student import (
     _ensure_parent_disjoint as ensure_student_parent_disjoint,
     segmentation_metrics,
@@ -66,6 +67,40 @@ CLASSES = (
 
 
 class PotsdamMappingTests(unittest.TestCase):
+    def test_toco_loss_supports_normalized_background_weight(self) -> None:
+        import torch
+
+        logits = torch.tensor(
+            [[[[2.0, -1.0]], [[-1.0, 2.0]], [[0.0, 0.0]]]],
+            dtype=torch.float32,
+        )
+        labels = torch.tensor([[[0, 1]]], dtype=torch.int64)
+        bg_labels = torch.tensor([[[0, 255]]], dtype=torch.int64)
+        fg_labels = torch.tensor([[[255, 1]]], dtype=torch.int64)
+        bg_loss = safe_cross_entropy(logits, bg_labels)
+        fg_loss = safe_cross_entropy(logits, fg_labels)
+
+        weighted = toco_seg_loss(
+            logits,
+            labels,
+            background_weight=0.25,
+            foreground_weight=1.0,
+        )
+
+        torch.testing.assert_close(
+            weighted,
+            (0.25 * bg_loss + fg_loss) / 1.25,
+        )
+        torch.testing.assert_close(
+            toco_seg_loss(
+                logits,
+                labels,
+                background_weight=0.0,
+                foreground_weight=1.0,
+            ),
+            fg_loss,
+        )
+
     def test_noisy_palette_label_is_repaired_with_distance_guard(self) -> None:
         with TemporaryDirectory() as temporary:
             root = Path(temporary)

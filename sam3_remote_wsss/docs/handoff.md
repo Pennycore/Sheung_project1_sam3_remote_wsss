@@ -528,7 +528,7 @@ CUDA_VISIBLE_DEVICES=0,1 python -m sam3_remote_wsss.train_student \
 
 - 尚未把完整 Potsdam 数据集切成 patch。
 - 已建立 17/6/14 父图划分清单，尚未在服务器完成全量 patch 生成。
-- CAM 训练已支持父图隔离验证、验证 macro-F1 选 `best.pt` 和每类验证 F1；尚未在完整父图划分上正式训练。
+- 完整父图划分上的正式 CAM 已训练完成；最佳为 epoch 19，validation macro-F1 0.9471。完整曲线因一次误启动被清空，但 `best.pt` 及最佳轮验证指标已保留。
 - 已完成单父图 CAM/SAM3 hybrid 和 background-only 指标，尚未在正式多父图划分上验证。
 - 尚未完成 student 独立验证集推理、patch 拼接和最终 mIoU 闭环。
 - 已在单父图 256 patch 上扫描背景和前景阈值，正式数据仍需复核。

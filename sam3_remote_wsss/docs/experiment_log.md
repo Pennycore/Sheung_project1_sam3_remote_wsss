@@ -479,6 +479,35 @@ checkpoint 选择: validation macro-F1 最大，val loss 用于同分决胜
 `train_log.jsonl`。现已改为发现 `train_log.jsonl`、`best.pt` 或 `last.pt` 时拒绝
 启动；只有显式传入 `--overwrite-output` 才会替换。控制台日志应使用 `tee -a`。
 
+### 正式 CAM 训练结果
+
+```text
+日期: 2026-08-03
+数据: Potsdam_patches_512_full
+train: 4,352 patches / 17 parent tiles
+validation: 1,536 patches / 6 parent tiles
+模型: ResNet-50 CAM, output stride 16, ImageNet initialization
+设备: 2 x NVIDIA 2080Ti, DataParallel, AMP
+计划 epochs: 20
+best epoch: 19
+best validation loss: 0.19989451327705865
+best validation micro-F1: 0.9506204102304381
+best validation macro-F1: 0.9471402317853196
+validation per-class F1:
+  impervious_surface: 0.9370199692780338
+  building: 0.9495412844036697
+  low_vegetation: 0.9765863590091619
+  tree: 0.9507246376811594
+  car: 0.9218289085545722
+checkpoint: runs/cam_resnet50_full/checkpoints/best.pt
+```
+
+正式训练完成后，同一命令被误启动，旧 `train_log.jsonl` 在新训练第一个 epoch
+完成前即被清空，因此完整 20 轮曲线不可恢复。误启动及时停止，原正式训练的
+`best.pt` 仍保留 epoch 19 及完整 validation 指标。该 checkpoint 应复制到独立的
+recovered 目录后用于 CAM 生成。上述分类指标证明图像级分类器训练有效，但不能
+单独证明 CAM 空间定位质量；下一阶段仍需检查 CAM 可视化与伪标签 IoU。
+
 ## 后续实验记录模板
 
 ```text

@@ -715,11 +715,11 @@ mIoU 提升 `0.0162688995`、pixel accuracy 提升 `0.0225373145`，且六类 Io
 阈值或训练超参数。当前完整方法闭环的最终主指标为 stitched test mIoU
 `52.59%` 和 foreground mIoU `59.83%`。
 
-### 待执行：同架构全监督上界
+### 同架构全监督上界：正式训练与验证
 
 ```text
 日期: 2026-08-04
-状态: 训练代码和单元测试已完成，等待服务器 smoke/full 运行
+状态: 20 epochs 正式训练完成，等待锁定 test stitched 评估
 目的: 量化当前 WSSS Student 相对同一数据划分和网络结构全监督上界的差距
 训练: 4,352 train patches / pixel GT
 验证: 1,536 val patches / 6 parent tiles
@@ -728,12 +728,34 @@ mIoU 提升 `0.0162688995`、pixel accuracy 提升 `0.0225373145`，且六类 Io
 初始化: ImageNet，不加载 CAM checkpoint
 损失: 标准 cross-entropy
 设备: 2 x NVIDIA 2080Ti / DataParallel / FP16 AMP
+best epoch: 20
+best train loss: 0.2837014668621123
+validation loss: 0.3703024876303971
+validation mIoU: 0.7164237514416052
+validation foreground mIoU: 0.7832898501955425
+validation pixel accuracy: 0.8640236925342666
+```
+
+```text
+validation class IoU:
+background:          0.38209325767191815
+impervious_surface:  0.7871020966380811
+building:            0.9065860397917864
+low_vegetation:      0.7450842764822087
+tree:                0.6789743943266183
+car:                 0.7987024437390186
 ```
 
 该实验使用与 WSSS Student 相同的父图划分、增强、20 epochs、验证选模和
 stitched test 评估。训练入口以 `--train-labels-csv` 和
 `--pseudo-label-dir` 区分全监督与弱监督来源，二者不能同时出现。检查点额外
 记录 `training_supervision` 和 `training_loss`，防止实验身份混淆。
+
+相对 WSSS Student 的最佳验证结果，全监督上界的 mIoU 提高
+`0.2288627043`，foreground mIoU 提高 `0.2339661873`，pixel accuracy
+提高 `0.1926960441`。全监督验证 mIoU 在 epoch 20 达到最高值，训练期间未
+出现 WSSS Student 在 epoch 12 后那样明显的伪标签噪声过拟合。为保持训练
+预算一致，本次上界仍固定为 20 epochs，不继续用验证集延长训练。
 
 ## 后续实验记录模板
 

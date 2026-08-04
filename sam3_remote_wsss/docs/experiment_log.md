@@ -959,6 +959,21 @@ IoU 波动更大，进一步表明背景学习是当前主要不稳定来源。s
 后续方法比较必须给 SAM3-only 基线补相同种子，并用均值/标准差而非单 seed
 结论。
 
+### Main vs SAM3-Only Validation 多种子对照
+
+| method | mIoU mean ± std | foreground mIoU mean ± std | pixel accuracy mean ± std | background IoU mean ± std |
+| --- | ---: | ---: | ---: | ---: |
+| Main | 0.4834 ± 0.0042 | 0.5462 ± 0.0031 | 0.6606 ± 0.0118 | 0.1691 ± 0.0099 |
+| SAM3-only + ImageNet | 0.4702 ± 0.0022 | **0.5643 ± 0.0026** | **0.7012 ± 0.0126** | 0.0000 ± 0.0000 |
+| paired Main - SAM3 | **+0.0131 ± 0.0064** | -0.0180 ± 0.0057 | -0.0407 ± 0.0194 | **+0.1691 ± 0.0099** |
+
+SAM3-only seed 42/43/44 的最佳 epoch 为 4/4/8，validation mIoU 为
+`0.4681/0.4725/0.4701`。三个配对 seed 上，Main 的六类 mIoU 都更高，
+foreground mIoU 和 pixel accuracy 都更低。因此性能取舍不是 seed 42 的
+偶然波动：当前背景策略稳定提供 background/clutter 能力并提高六类均值，
+但稳定牺牲标准五前景均值。下一步只对已由 validation 锁定的六个 checkpoint
+各做一次 test 推理，不能再根据 test 调参。
+
 ### Background Loss Weight 验证扫描（完成）
 
 | background weight | best epoch | mIoU | foreground mIoU | pixel accuracy | background IoU | tree IoU |

@@ -543,6 +543,7 @@ CUDA_VISIBLE_DEVICES=0,1 python -m sam3_remote_wsss.train_student \
 - 完整 2×2 消融已完成：SAM3-only + ImageNet 的 validation mIoU/foreground mIoU 为 0.4681/0.5617；SAM3-only + CAM init 为 0.4540/0.5447；background + ImageNet 为 0.4626/0.5257；background + CAM init 主方法为 0.4876/0.5493。CAM 初始化与背景种子的 mIoU 正交互约为 +0.0392。主方法六类 mIoU 最佳，但五前景类指标低于 SAM3-only + ImageNet，需如实报告并继续改进前景融合。
 - 2×2 锁定 test 结论一致：主方法六类 mIoU 0.5259 最佳；SAM3-only + ImageNet 的 foreground mIoU 0.6082 和 pixel accuracy 0.7435 最佳。新增可配置 ToCo background/foreground loss 权重，下一步只在 validation 扫描较低背景权重，不能继续按 test 选参。
 - Background loss weight 阶段一验证扫描完成：weight 1.0/0.5/0.25 的 validation mIoU 分别为 0.4876/0.4886/0.4901，foreground mIoU 为 0.5493/0.5469/0.5506。0.25 暂时最佳，但提升仅约 0.0025 mIoU 且 tree 明显下降；需补测 0.10，并在多 seed 前避免宣称稳定提升。
+- Background loss weight 完整验证扫描已冻结：weight 0.10 的 mIoU 为 0.4852，未超过 0.25。按 validation mIoU 固定 0.25 为唯一 test 候选，不再继续细调；其相对默认 1.0 只提升约 0.0025 且 tree 更差，必须等待 test/多 seed 后再判断。
 - 已在单父图 256 patch 上扫描背景和前景阈值，正式数据仍需复核。
 - 尚未完成完整 Prompt1/Prompt4/RemoteCLIP 排序消融。
 - 尚未统计两张 2080Ti 上完整实验的运行时间和显存。

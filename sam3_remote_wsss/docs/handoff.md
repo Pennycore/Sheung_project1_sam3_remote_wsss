@@ -544,6 +544,7 @@ CUDA_VISIBLE_DEVICES=0,1 python -m sam3_remote_wsss.train_student \
 - 2×2 锁定 test 结论一致：主方法六类 mIoU 0.5259 最佳；SAM3-only + ImageNet 的 foreground mIoU 0.6082 和 pixel accuracy 0.7435 最佳。新增可配置 ToCo background/foreground loss 权重，下一步只在 validation 扫描较低背景权重，不能继续按 test 选参。
 - Background loss weight 扫描已冻结：weight 0.10 的 validation mIoU 为 0.4852，未超过 0.25；按 validation mIoU 选择 0.25，停止继续搜索。0.25 仅比 1.0 高约 0.0025 且 tree 明显下降，需先做一次锁定 test，再用多 seed 判断小增益是否稳定。
 - 冻结的 weight 0.25 在 stitched test 上 mIoU 0.5216，比默认 1.0 下降 0.0043；foreground mIoU 0.5996，微升 0.0013。主要损失来自 background -0.0322 和 tree -0.0437。因此正式主方法固定回默认 weight 1.0，不再调权重；该扫描按负结果保留。
+- 主方法 validation 三随机种子完成：seed 42/43/44 的 mIoU 为 0.4876/0.4791/0.4835，均值 0.4834、样本标准差 0.0042；foreground mIoU 均值 0.5462、标准差 0.0031。结果总体稳定，下一步需给 SAM3-only + ImageNet 基线补相同 seed 后比较均值。
 - Background loss weight 完整验证扫描已冻结：weight 0.10 的 mIoU 为 0.4852，未超过 0.25。按 validation mIoU 固定 0.25 为唯一 test 候选，不再继续细调；其相对默认 1.0 只提升约 0.0025 且 tree 更差，必须等待 test/多 seed 后再判断。
 - 已在单父图 256 patch 上扫描背景和前景阈值，正式数据仍需复核。
 - 尚未完成完整 Prompt1/Prompt4/RemoteCLIP 排序消融。

@@ -943,6 +943,22 @@ best epoch: 16
 validation mIoU，正式主方法回退并固定默认 `1.0`；不再根据该 test 结果继续
 搜索权重。加权损失保留为负结果和后续独立研究选项。
 
+### 主方法 Validation 多随机种子
+
+| seed | best epoch | mIoU | foreground mIoU | pixel accuracy | background IoU |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 42 | 12 | 0.4876 | 0.5493 | 0.6713 | 0.1787 |
+| 43 | 17 | 0.4791 | 0.5431 | 0.6479 | 0.1590 |
+| 44 | 18 | 0.4835 | 0.5463 | 0.6624 | 0.1695 |
+| mean | - | 0.4834 | 0.5462 | 0.6606 | 0.1691 |
+| sample std | - | 0.0042 | 0.0031 | 0.0118 | 0.0099 |
+
+主方法 validation mIoU/foreground mIoU 的样本标准差分别约为
+`0.42/0.31` 个百分点，整体训练结论较稳定。pixel accuracy 和 background
+IoU 波动更大，进一步表明背景学习是当前主要不稳定来源。seed 42 高于均值，
+后续方法比较必须给 SAM3-only 基线补相同种子，并用均值/标准差而非单 seed
+结论。
+
 ### Background Loss Weight 验证扫描（完成）
 
 | background weight | best epoch | mIoU | foreground mIoU | pixel accuracy | background IoU | tree IoU |

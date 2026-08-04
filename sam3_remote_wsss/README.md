@@ -536,6 +536,13 @@ background and foreground terms equal weight. Use
 validation-only sweep when sparse or noisy background seeds should contribute
 less. The defaults are both `1.0`, which exactly preserves prior experiments.
 
+`--loss decomposed` instead trains three normalized terms: background-vs-
+foreground evidence on background seeds, the same binary evidence on SAM3
+foreground seeds, and conditional five-class semantics only on foreground
+seeds. It keeps the six-logit model and ordinary argmax inference, while
+preventing sparse background supervision from directly defining competition
+among all foreground classes. `--semantic-loss-weight` controls the third term.
+
 ## Step 6: Evaluate And Stitch The Student
 
 Use the parent-disjoint test CSV only after model selection is complete:

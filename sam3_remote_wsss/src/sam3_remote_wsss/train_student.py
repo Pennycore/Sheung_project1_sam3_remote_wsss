@@ -15,7 +15,11 @@ from .student.dataset import (
     PotsdamGroundTruthTrainDataset,
     PotsdamPseudoSegDataset,
 )
-from .student.losses import safe_cross_entropy, toco_seg_loss
+from .student.losses import (
+    decomposed_background_seg_loss,
+    safe_cross_entropy,
+    toco_seg_loss,
+)
 from .student.model import StudentSegmentor
 from .training_output import prepare_training_output
 
@@ -86,7 +90,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ignore-boundary-width", type=int, default=1)
     parser.add_argument(
         "--loss",
-        choices=["auto", "cross_entropy", "toco"],
+        choices=["auto", "cross_entropy", "toco", "decomposed"],
         default="auto",
         help=(
             "Training loss. auto uses ToCo for pseudo labels and cross-entropy "
@@ -97,13 +101,19 @@ def parse_args() -> argparse.Namespace:
         "--background-loss-weight",
         type=float,
         default=1.0,
-        help="Relative ToCo loss weight for labeled background pixels.",
+        help="Relative loss weight for labeled background seeds.",
     )
     parser.add_argument(
         "--foreground-loss-weight",
         type=float,
         default=1.0,
-        help="Relative ToCo loss weight for labeled foreground pixels.",
+        help="Relative loss weight for labeled foreground seeds.",
+    )
+    parser.add_argument(
+        "--semantic-loss-weight",
+        type=float,
+        default=1.0,
+        help="Relative foreground semantic term for decomposed loss.",
     )
     parser.add_argument(
         "--selection-metric",
@@ -183,7 +193,8 @@ def main() -> None:
         f"training supervision={supervision} loss={loss_name} "
         f"images={len(dataset.items)} samples={len(dataset)} "
         f"bg_loss_weight={args.background_loss_weight:g} "
-        f"fg_loss_weight={args.foreground_loss_weight:g}"
+        f"fg_loss_weight={args.foreground_loss_weight:g} "
+        f"semantic_loss_weight={args.semantic_loss_weight:g}"
     )
     device = torch.device(args.device if torch.cuda.is_available() or args.device == "cpu" else "cpu")
     loader = DataLoader(
@@ -275,13 +286,22 @@ def main() -> None:
                         labels.long(),
                         ignore_index=config.ignore_index,
                     )
-                else:
+                elif loss_name == "toco":
                     loss = toco_seg_loss(
                         logits,
                         labels,
                         ignore_index=config.ignore_index,
                         background_weight=args.background_loss_weight,
                         foreground_weight=args.foreground_loss_weight,
+                    )
+                else:
+                    loss = decomposed_background_seg_loss(
+                        logits,
+                        labels,
+                        ignore_index=config.ignore_index,
+                        background_weight=args.background_loss_weight,
+                        foreground_weight=args.foreground_loss_weight,
+                        semantic_weight=args.semantic_loss_weight,
                     )
             scaler.scale(loss).backward()
             scaler.step(optimizer)
@@ -389,7 +409,11 @@ def _resolve_training_loss(args: argparse.Namespace) -> str:
 
 
 def _validate_loss_weights(args: argparse.Namespace, loss_name: str) -> None:
-    if args.background_loss_weight < 0 or args.foreground_loss_weight < 0:
+    if (
+        args.background_loss_weight < 0
+        or args.foreground_loss_weight < 0
+        or args.semantic_loss_weight < 0
+    ):
         raise ValueError("Segmentation loss weights must be non-negative")
     if (
         loss_name == "toco"
@@ -397,6 +421,13 @@ def _validate_loss_weights(args: argparse.Namespace, loss_name: str) -> None:
         and args.foreground_loss_weight == 0
     ):
         raise ValueError("At least one ToCo segmentation loss weight must be positive")
+    if (
+        loss_name == "decomposed"
+        and args.background_loss_weight == 0
+        and args.foreground_loss_weight == 0
+        and args.semantic_loss_weight == 0
+    ):
+        raise ValueError("At least one decomposed loss weight must be positive")
 
 
 _PATCH_SUFFIX = re.compile(r"_x\d+_y\d+$")

@@ -974,6 +974,22 @@ foreground mIoU 和 pixel accuracy 都更低。因此性能取舍不是 seed 42 
 但稳定牺牲标准五前景均值。下一步只对已由 validation 锁定的六个 checkpoint
 各做一次 test 推理，不能再根据 test 调参。
 
+### Main vs SAM3-Only Stitched Test 多种子对照
+
+| method | mIoU mean ± std | foreground mIoU mean ± std | pixel accuracy mean ± std | background IoU mean ± std |
+| --- | ---: | ---: | ---: | ---: |
+| Main | **0.5244 ± 0.0014** | 0.5964 ± 0.0017 | 0.7137 ± 0.0061 | **0.1642 ± 0.0044** |
+| SAM3-only + ImageNet | 0.5081 ± 0.0035 | **0.6097 ± 0.0042** | **0.7396 ± 0.0106** | 0.0000 ± 0.0000 |
+| paired Main - SAM3 | **+0.0163 ± 0.0038** | -0.0133 ± 0.0053 | -0.0260 ± 0.0114 | **+0.1642 ± 0.0044** |
+
+Main 的 test class IoU 均值为 background `0.1642`、impervious surface
+`0.5835`、building `0.7710`、low vegetation `0.4419`、tree `0.4679`、
+car `0.7179`。SAM3-only 对应为 `0/0.6245/0.7812/0.5097/0.4348/0.6983`。
+主方法稳定提升 background、tree 和 car，却稳定损失 impervious surface、
+building 和 low vegetation。基于该重复结果，下一版不再调整全局背景权重，
+而是新增 background-vs-foreground 与条件前景语义解耦损失；所有新选择仍只
+使用 validation。
+
 ### Background Loss Weight 验证扫描（完成）
 
 | background weight | best epoch | mIoU | foreground mIoU | pixel accuracy | background IoU | tree IoU |

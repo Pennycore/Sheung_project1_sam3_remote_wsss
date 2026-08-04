@@ -50,7 +50,11 @@ from sam3_remote_wsss.student.dataset import (
     PotsdamGroundTruthSegDataset,
     PotsdamGroundTruthTrainDataset,
 )
-from sam3_remote_wsss.student.losses import safe_cross_entropy, toco_seg_loss
+from sam3_remote_wsss.student.losses import (
+    decomposed_background_seg_loss,
+    safe_cross_entropy,
+    toco_seg_loss,
+)
 from sam3_remote_wsss.train_student import (
     _ensure_parent_disjoint as ensure_student_parent_disjoint,
     segmentation_metrics,
@@ -100,6 +104,38 @@ class PotsdamMappingTests(unittest.TestCase):
             ),
             fg_loss,
         )
+
+    def test_decomposed_loss_separates_binary_and_semantic_terms(self) -> None:
+        import torch
+
+        logits = torch.tensor(
+            [
+                [
+                    [[2.0, -1.0, -1.0]],
+                    [[-1.0, 2.0, 0.0]],
+                    [[0.0, -1.0, 2.0]],
+                ]
+            ],
+            dtype=torch.float32,
+            requires_grad=True,
+        )
+        labels = torch.tensor([[[0, 1, 2]]], dtype=torch.int64)
+        foreground_score = torch.logsumexp(logits[:, 1:], dim=1)
+        binary_logits = torch.stack((foreground_score, logits[:, 0]), dim=1)
+        bg_target = torch.tensor([[[1, 255, 255]]], dtype=torch.int64)
+        fg_target = torch.tensor([[[255, 0, 0]]], dtype=torch.int64)
+        semantic_target = torch.tensor([[[255, 0, 1]]], dtype=torch.int64)
+        expected = (
+            safe_cross_entropy(binary_logits, bg_target)
+            + safe_cross_entropy(binary_logits, fg_target)
+            + safe_cross_entropy(logits[:, 1:], semantic_target)
+        ) / 3.0
+
+        loss = decomposed_background_seg_loss(logits, labels)
+
+        torch.testing.assert_close(loss, expected)
+        loss.backward()
+        self.assertTrue(torch.isfinite(logits.grad).all())
 
     def test_noisy_palette_label_is_repaired_with_distance_guard(self) -> None:
         with TemporaryDirectory() as temporary:

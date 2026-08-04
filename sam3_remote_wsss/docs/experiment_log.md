@@ -909,6 +909,21 @@ building `0.0208` 和 low vegetation `0.0422`。下一步在固定主方法伪�
 CAM 初始化的条件下，仅扫描 ToCo background loss 权重，尝试保留背景/tree
 收益并恢复其余前景类。
 
+### Background Loss Weight 验证扫描（阶段一）
+
+| background weight | best epoch | mIoU | foreground mIoU | pixel accuracy | background IoU |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 1.00 | 12 | 0.4876 | 0.5493 | 0.6713 | 0.1787 |
+| 0.50 | 8 | 0.4886 | 0.5469 | 0.6601 | **0.1976** |
+| 0.25 | 16 | **0.4901** | **0.5506** | **0.6788** | 0.1872 |
+
+`0.25` 是阶段一验证最优权重，相对 `1.0` 将 mIoU 提高约 `0.0025`、
+foreground mIoU 提高约 `0.0013`、pixel accuracy 提高约 `0.0075`。
+但 class IoU 变化并不均匀：impervious surface、building、car 和 background
+分别约提高 `0.0087/0.0285/0.0253/0.0085`，tree 约降低 `0.0556`，low
+vegetation 基本不变。由于总体增益较小且来自单 seed，尚不能视为稳定改进；
+继续补测 `0.10` 后再冻结权重。
+
 ## 后续实验记录模板
 
 ```text

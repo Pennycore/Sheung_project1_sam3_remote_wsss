@@ -927,6 +927,22 @@ vegetation 基本不变。`0.10` 的 mIoU 回落到 `0.4852`，且 tree IoU 继�
 规则冻结 `0.25`。由于总体增益较小且来自单 seed，尚不能视为稳定改进；
 下一步仅对冻结的 `0.25` 做一次 test，之后若要宣称提升必须补多 seed。
 
+```text
+冻结 weight=0.25 stitched test:
+mIoU:             0.5216  (vs 1.00: -0.0043244574)
+foreground mIoU:  0.5996  (vs 1.00: +0.0012509892)
+pixel accuracy:   0.7272  (vs 1.00: +0.0067072361)
+background IoU:   0.1318  (vs 1.00: -0.0322016907)
+best epoch: 16
+```
+
+相对 `1.0`，weight `0.25` 的 class IoU 变化为 impervious surface
+`+0.0054`、building `+0.0348`、low vegetation `-0.0082`、tree
+`-0.0437`、car `+0.0180`。它轻微提高标准五前景均值和 pixel accuracy，
+但六类 mIoU 未泛化，且 background/tree 明显下降。由于预先选择指标为六类
+validation mIoU，正式主方法回退并固定默认 `1.0`；不再根据该 test 结果继续
+搜索权重。加权损失保留为负结果和后续独立研究选项。
+
 ### Background Loss Weight 验证扫描（完成）
 
 | background weight | best epoch | mIoU | foreground mIoU | pixel accuracy | background IoU | tree IoU |

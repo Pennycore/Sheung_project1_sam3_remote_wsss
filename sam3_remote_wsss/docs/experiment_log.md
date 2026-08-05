@@ -990,6 +990,26 @@ building 和 low vegetation。基于该重复结果，下一版不再调整全�
 而是新增 background-vs-foreground 与条件前景语义解耦损失；所有新选择仍只
 使用 validation。
 
+### 解耦损失 v1：三项等权
+
+```text
+loss: decomposed
+background/foreground-binary/semantic weights: 1/1/1
+best epoch: 16
+validation mIoU: 0.4746670
+validation foreground mIoU: 0.5335035
+validation pixel accuracy: 0.6419209
+validation background IoU: 0.1804844
+```
+
+相对旧主方法，mIoU/foreground mIoU/pixel accuracy 分别下降
+`0.0128941/0.0158202/0.0294067`。background 和 car IoU 分别提高
+`0.0017/0.0567`，其余四个前景类别均下降。该版本不进入 test。等权设计使
+真正的五类 semantic term 只占总损失 `1/3`，而旧损失的前景项约占 `1/2`；
+因此只补一个预先解释明确的 `semantic_weight=2` 实验，使 semantic 占比恢复
+为一半。如果它不能同时超过旧主方法的 validation mIoU `0.4876` 和
+foreground mIoU `0.5493`，则终止解耦损失分支，不继续调参。
+
 ### Background Loss Weight 验证扫描（完成）
 
 | background weight | best epoch | mIoU | foreground mIoU | pixel accuracy | background IoU | tree IoU |

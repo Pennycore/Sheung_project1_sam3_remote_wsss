@@ -17,6 +17,22 @@
 
 目前路线刻意保留了 “SAM3-only” 基线：不先训练分类网络，而是直接用图像级正类生成文本 prompt。RemoteCLIP 模块目前只负责对候选 prompt 排序，不负责生成新的类别标签。
 
+## 2026-08-07 最新状态
+
+当前正式协议已完成17/6/14父图互斥划分、512 patch训练、拼接test评估和三随机种子
+复现。主方法 stitched test mIoU/foreground mIoU 为 `0.5244 +/- 0.0014` 和
+`0.5964 +/- 0.0017`；SAM3-only为 `0.5081 +/- 0.0035` 和
+`0.6097 +/- 0.0042`；同结构全监督结果为 `0.7318/0.8113`。历史Prompt4已更正命名
+为Manual4领域提示集成；固定256-patch提示消融中，Manual4 foreground mIoU
+`0.4560`，优于Prompt1 `0.2427`、B2C4 `0.2763`、CLIP-Top4 `0.3609` 和
+RemoteCLIP-Top4 `0.2788`。
+
+当前下一阶段是伪标签语义校正，不再继续搜索分割头和背景损失权重。代码已新增
+`generate_pseudo_labels --save-candidates` 和 `summarize_candidates`，用于缓存并汇总
+逐提示词、逐实例SAM3候选掩码。服务器尚未生成该缓存；先在固定256-patch子集完成
+候选缓存，再诊断mask purity、提示词一致性和masked-region类别一致性。旧章节中的
+早期“尚未完成”描述保留作历史记录，本节为最新状态。
+
 ## 2. 已经完成
 
 - 已实现 Potsdam 数据读取和像素标签到 image-level CSV 的转换。

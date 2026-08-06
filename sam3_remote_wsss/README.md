@@ -173,6 +173,27 @@ Only patch IDs present in `--labels-csv` are processed. With two shards, the
 generator writes `summary_shard0.json` and `summary_shard1.json`; retries with
 `--skip-existing` preserve prior summary entries and complete missing outputs.
 
+To preserve the accepted per-prompt, per-instance foreground masks for later
+semantic-consistency experiments, add `--save-candidates`:
+
+```bash
+python -m sam3_remote_wsss.generate_pseudo_labels \
+  --config "$FULL_ROOT/potsdam_patches_config_manual4.json" \
+  --labels-csv data/prompt_ablation_256.csv \
+  --output-dir runs/manual4_candidates_256_v1 \
+  --save-candidates \
+  --skip-existing
+
+python -m sam3_remote_wsss.summarize_candidates \
+  --candidate-dir runs/manual4_candidates_256_v1/candidates
+```
+
+Candidate caching is opt-in and does not alter the normal fusion policy. Each
+compressed cache stores the class, exact prompt, SAM score, area, bounding box,
+tile origin, and losslessly packed binary mask. When both `--save-candidates`
+and `--skip-existing` are used, an image is complete only if its pseudo label
+and both candidate-cache files exist.
+
 Important config fields:
 
 - `sam3_repo`: path to the original SAM3 repository.
@@ -201,6 +222,9 @@ runs/potsdam_sam3_only
   overlays
     top_potsdam_2_10.jpg
   metadata
+    top_potsdam_2_10.json
+  candidates                 # only with --save-candidates
+    top_potsdam_2_10.npz
     top_potsdam_2_10.json
 ```
 

@@ -7,6 +7,11 @@ from pathlib import Path
 import numpy as np
 from tqdm import tqdm
 
+from .candidate_cache import (
+    CandidateMask,
+    candidate_cache_exists,
+    save_candidate_cache,
+)
 from .config import ClassSpec, load_config
 from .fusion import FusionCanvas, filter_masks
 from .potsdam import discover_potsdam_items, read_image_level_csv, read_rgbir_as_rgb, read_tiff_size
@@ -27,16 +32,29 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--num-shards", type=int, default=1, help="Total number of dataset shards.")
     parser.add_argument("--shard-index", type=int, default=0, help="Current shard index in [0, num_shards).")
     parser.add_argument("--skip-existing", action="store_true", help="Skip images whose pseudo-label PNG already exists.")
+    parser.add_argument(
+        "--save-candidates",
+        action="store_true",
+        help="Save compressed per-prompt, per-instance foreground masks for later diagnostics.",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Inspect planned work without loading SAM3.")
     return parser.parse_args()
 
 
 class SAM3WSSSPseudoLabeler:
-    def __init__(self, config_path: str | Path, labels_csv: str | Path, output_dir: str | Path, dry_run: bool = False) -> None:
+    def __init__(
+        self,
+        config_path: str | Path,
+        labels_csv: str | Path,
+        output_dir: str | Path,
+        dry_run: bool = False,
+        save_candidates: bool = False,
+    ) -> None:
         self.config = load_config(config_path)
         self.image_level = read_image_level_csv(labels_csv)
         self.output_dir = Path(output_dir)
         self.dry_run = dry_run
+        self.save_candidates = save_candidates
         self.class_by_name = {spec.name: spec for spec in self.config.classes}
         self.backend = None
         self.prompt_selector = None
@@ -74,6 +92,7 @@ class SAM3WSSSPseudoLabeler:
                 "kept_background_masks": 0,
                 "remoteclip_enabled": self.config.remoteclip.enabled,
                 "prompt_selector": self._prompt_selector_metadata(),
+                "save_candidates": self.save_candidates,
             }
             return metadata
 
@@ -94,7 +113,10 @@ class SAM3WSSSPseudoLabeler:
             "remoteclip_enabled": self.config.remoteclip.enabled,
             "prompt_selector": self._prompt_selector_metadata(),
             "remoteclip_selected_prompts": {},
+            "save_candidates": self.save_candidates,
         }
+
+        candidates: list[CandidateMask] = []
 
         canvas = FusionCanvas(
             height=height,
@@ -138,7 +160,7 @@ class SAM3WSSSPseudoLabeler:
             )
             foreground_outputs = outputs[: len(prompt_jobs)]
             background_outputs = outputs[len(prompt_jobs) :]
-            for (spec, _prompt), output in zip(prompt_jobs, foreground_outputs):
+            for (spec, prompt), output in zip(prompt_jobs, foreground_outputs):
                 kept = filter_masks(
                     output["masks"],
                     output["scores"],
@@ -148,6 +170,18 @@ class SAM3WSSSPseudoLabeler:
                 )
                 for mask, score in kept:
                     canvas.add_mask(mask=mask, class_id=spec.id, score=score, x0=tile.x0, y0=tile.y0)
+                    if self.save_candidates:
+                        candidates.append(
+                            CandidateMask(
+                                class_id=spec.id,
+                                class_name=spec.name,
+                                prompt=prompt,
+                                score=score,
+                                mask=mask,
+                                x0=tile.x0,
+                                y0=tile.y0,
+                            )
+                        )
                 metadata["kept_masks"] += len(kept)
 
             for output in background_outputs:
@@ -170,6 +204,27 @@ class SAM3WSSSPseudoLabeler:
             str(int(class_id)): int(count)
             for class_id, count in zip(ids, counts)
         }
+        if self.save_candidates:
+            cache_metadata = save_candidate_cache(
+                cache_dir=self.output_dir / "candidates",
+                image_id=image_id,
+                image_shape=(height, width),
+                candidates=candidates,
+                provenance={
+                    "score_threshold": self.config.score_threshold,
+                    "min_mask_area": self.config.min_mask_area,
+                    "max_mask_area_ratio": self.config.max_mask_area_ratio,
+                    "prompt_style": self.config.prompting.style,
+                    "max_prompts_per_class": self.config.prompting.max_prompts_per_class,
+                    "remoteclip_enabled": self.config.remoteclip.enabled,
+                },
+            )
+            metadata["candidate_cache"] = {
+                "data": f"candidates/{image_id}.npz",
+                "metadata": f"candidates/{image_id}.json",
+                "candidate_count": cache_metadata["candidate_count"],
+                "class_candidate_counts": cache_metadata["class_candidate_counts"],
+            }
         self._save_outputs(image_id, image, label, metadata)
         return metadata
 
@@ -201,6 +256,7 @@ def main() -> None:
         labels_csv=args.labels_csv,
         output_dir=args.output_dir,
         dry_run=args.dry_run,
+        save_candidates=args.save_candidates,
     )
     items = [
         item
@@ -227,7 +283,11 @@ def main() -> None:
         items = [
             item
             for item in items
-            if not (output_dir / "pseudo_labels" / f"{item.image_id}.png").exists()
+            if not _item_output_complete(
+                output_dir,
+                item.image_id,
+                save_candidates=args.save_candidates,
+            )
         ]
 
     summaries = []
@@ -256,6 +316,19 @@ def _merge_summaries(previous: list[dict], current: list[dict]) -> list[dict]:
         if "image_id" in item
     }
     return [by_image_id[image_id] for image_id in sorted(by_image_id)]
+
+
+def _item_output_complete(
+    output_dir: Path,
+    image_id: str,
+    save_candidates: bool,
+) -> bool:
+    pseudo_label_exists = (output_dir / "pseudo_labels" / f"{image_id}.png").exists()
+    if not pseudo_label_exists:
+        return False
+    if not save_candidates:
+        return True
+    return candidate_cache_exists(output_dir / "candidates", image_id)
 
 
 if __name__ == "__main__":

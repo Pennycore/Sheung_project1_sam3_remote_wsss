@@ -1160,6 +1160,32 @@ B2C句式。这表明当前 raw cosine 排序主要反映 RemoteCLIP 预训练�
 `--openai-checkpoint`，允许 OpenAI CLIP 与 RemoteCLIP 都从本地 checkpoint 离线加载；
 上传完整权重后 smoke 与256-patch实验均成功。
 
+### SAM3逐提示词候选缓存（代码完成，服务器实验待运行）
+
+日期：2026-08-07。下一阶段不再继续调整分割头或背景权重，而是诊断SAM3伪标签的
+语义错误与覆盖不足。正式依据如下：完整train伪标签 strict foreground mIoU
+`0.4589`、labeled foreground mIoU `0.6356`、coverage `0.6139`；三随机种子
+SAM3-only stitched test foreground mIoU 为 `0.6097 +/- 0.0042`，当前主方法为
+`0.5964 +/- 0.0017`，同结构全监督上限为 `0.8113`。这些结果支持将伪标签质量
+作为首要研究方向，但train伪标签指标与test学生指标不能直接解释为同一划分上的
+逐点提升。
+
+生成器新增显式 `--save-candidates`。启用后，在保持原Manual4融合输出不变的同时，
+额外保存每个已接受前景实例的类别、原始提示词、SAM分数、面积、边界框、tile坐标
+和无损压缩二值掩码。缓存采用无pickle的NPZ数组和JSON sidecar，支持不同tile尺寸；
+默认不开启时旧实验行为不变。`--skip-existing --save-candidates` 只有在伪标签和两份
+候选缓存文件均存在时才跳过图像，因此可安全补跑中断任务。
+
+新增 `python -m sam3_remote_wsss.summarize_candidates`，汇总图像数、候选数、
+每类/每提示词候选数、SAM分数分位数、面积分位数和缓存体积，无需解压全部掩码。
+本地单元测试共32项通过；尚未运行服务器SAM3，因此这里不记录任何新精度结果。
+
+固定实验协议继续使用512x512 patch和同一 `data/prompt_ablation_256.csv`，不是改成
+256x256输入。服务器先完成单patch smoke，再用两张2080Ti按两个shard生成256个
+patch候选。候选完整性确认后，下一项才是基于GT的离线诊断：计算每个SAM3候选的
+mask purity、Manual4提示词支持数，以及CAM/CLIP/RemoteCLIP masked-region分类
+一致率。GT只用于诊断和验证，不进入候选生成或训练。
+
 ### Background Loss Weight 验证扫描（完成）
 
 | background weight | best epoch | mIoU | foreground mIoU | pixel accuracy | background IoU | tree IoU |

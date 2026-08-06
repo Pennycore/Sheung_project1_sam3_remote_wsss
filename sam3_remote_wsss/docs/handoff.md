@@ -557,6 +557,7 @@ CUDA_VISIBLE_DEVICES=0,1 python -m sam3_remote_wsss.train_student \
 - Background loss weight 完整验证扫描已冻结：weight 0.10 的 mIoU 为 0.4852，未超过 0.25。按 validation mIoU 固定 0.25 为唯一 test 候选，不再继续细调；其相对默认 1.0 只提升约 0.0025 且 tree 更差，必须等待 test/多 seed 后再判断。
 - 已在单父图 256 patch 上扫描背景和前景阈值，正式数据仍需复核。
 - Prompt1、Manual4、真实 B2C4、四个单提示 Slot、OpenAI CLIP-Top4 与 RemoteCLIP-Top4 的固定256-patch伪标签消融均已完成。下一步只做 metadata 提示选择频率诊断，不再按训练GT调候选池或 Top-K。
+- 2026-08-07 已新增逐提示词、逐实例SAM3候选缓存：`generate_pseudo_labels --save-candidates` 会在不改变Manual4融合结果的前提下保存压缩NPZ和JSON；`summarize_candidates` 可汇总每类/每提示词候选数及分数、面积分布。32项本地测试通过，服务器固定256-patch候选尚未生成。下一步先跑单patch smoke和双卡两shard缓存，再做mask purity、提示支持数及masked-region类别一致性诊断；暂不训练新student。
 - 尚未统计两张 2080Ti 上完整实验的运行时间和显存。
 
 ## 14. 交接给新 Codex 任务的文本
@@ -576,7 +577,8 @@ CAM/SAM3 代码、CAM 热力图检查、阈值扫描、background-only 伪标签
 完整 Potsdam 已生成 9,472 个 patch，正式 split 为 4,352 train、1,536 val、3,584 test。`top_potsdam_4_12` 标签已修复，SAM3 与 CAM 已重建。正式 background-only 融合在 4,352 train patch 上得到 mIoU 0.4085、foreground mIoU 0.4589、coverage 0.6226、background IoU 0.1565。
 Student best epoch 为 12，正式 14 张 test 父图拼接结果为 mIoU 0.5259、foreground mIoU 0.5983、pixel accuracy 0.7205。
 
-请基于现有实现继续，不要重新设计。先检查 Git 状态和服务器是否拉取最新提交，
-完整训练与 test 闭环已经完成。下一步优先建立同一 split 和同一评估协议下的
-CAM-only、SAM3-only Student 及不加载 CAM encoder 消融，不再用 test 调参。
+请基于现有实现继续，不要重新设计。完整训练、test、多随机种子、loss、prompt与
+CLIP/RemoteCLIP消融已经完成。当前下一步是为固定 `data/prompt_ablation_256.csv`
+生成Manual4逐提示词SAM3候选缓存，然后诊断候选掩码语义纯度、提示词一致性和
+masked-region分类一致性；不要继续按test调参，也不要立即训练新student。
 ```

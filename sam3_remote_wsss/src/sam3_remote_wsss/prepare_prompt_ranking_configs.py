@@ -23,6 +23,14 @@ def parse_args() -> argparse.Namespace:
         help="Path to RemoteCLIP OpenCLIP-format checkpoint.",
     )
     parser.add_argument(
+        "--openai-checkpoint",
+        default=None,
+        help=(
+            "Optional local OpenAI CLIP checkpoint. When omitted, OpenCLIP "
+            "downloads the openai weights at runtime."
+        ),
+    )
+    parser.add_argument(
         "--output-dir",
         default=None,
         help="Config output directory. Defaults to the base config directory.",
@@ -39,6 +47,7 @@ def build_prompt_ranking_configs(
     base: dict[str, Any],
     remoteclip_checkpoint: str | Path,
     *,
+    openai_checkpoint: str | Path | None = None,
     model_name: str = "ViT-B-32",
     device: str | None = None,
     top_k: int = 4,
@@ -66,7 +75,12 @@ def build_prompt_ranking_configs(
     )
 
     clip_config = copy.deepcopy(ranked)
-    clip_config["remoteclip"] = {**selector, "checkpoint_path": None}
+    clip_config["remoteclip"] = {
+        **selector,
+        "checkpoint_path": (
+            str(openai_checkpoint) if openai_checkpoint is not None else None
+        ),
+    }
 
     remoteclip_config = copy.deepcopy(ranked)
     remoteclip_config["remoteclip"] = {
@@ -100,10 +114,18 @@ def main() -> None:
     checkpoint_path = Path(args.remoteclip_checkpoint)
     if not checkpoint_path.is_file():
         raise FileNotFoundError(f"RemoteCLIP checkpoint not found: {checkpoint_path}")
+    openai_checkpoint_path = (
+        Path(args.openai_checkpoint) if args.openai_checkpoint else None
+    )
+    if openai_checkpoint_path is not None and not openai_checkpoint_path.is_file():
+        raise FileNotFoundError(
+            f"OpenAI CLIP checkpoint not found: {openai_checkpoint_path}"
+        )
     base = json.loads(base_path.read_text(encoding="utf-8"))
     clip_config, remoteclip_config = build_prompt_ranking_configs(
         base,
         checkpoint_path,
+        openai_checkpoint=openai_checkpoint_path,
         model_name=args.model_name,
         device=args.device,
         top_k=args.top_k,

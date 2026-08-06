@@ -128,6 +128,7 @@ class PotsdamMappingTests(unittest.TestCase):
         clip_raw, remoteclip_raw = build_prompt_ranking_configs(
             base,
             "/tmp/RemoteCLIP-ViT-B-32.pt",
+            openai_checkpoint="/tmp/open_clip_pytorch_model.bin",
             top_k=4,
         )
 
@@ -135,7 +136,10 @@ class PotsdamMappingTests(unittest.TestCase):
         remoteclip_config = parse_config(remoteclip_raw)
 
         self.assertTrue(clip_config.remoteclip.enabled)
-        self.assertIsNone(clip_config.remoteclip.checkpoint_path)
+        self.assertEqual(
+            clip_config.remoteclip.checkpoint_path,
+            Path("/tmp/open_clip_pytorch_model.bin"),
+        )
         self.assertEqual(
             remoteclip_config.remoteclip.checkpoint_path,
             Path("/tmp/RemoteCLIP-ViT-B-32.pt"),

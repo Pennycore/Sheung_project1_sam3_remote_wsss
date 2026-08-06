@@ -1118,6 +1118,10 @@ Top-K、分数和每个 patch/class 的选中提示。正式验证顺序为：�
 子集做各1张 smoke，再并行生成完整256组并评估。该分支当前只有实现与单元测试，
 尚无实验指标，不能宣称优于 Manual4。
 
+服务器无法连接 Hugging Face，OpenAI CLIP 单图 smoke 在权重下载阶段失败，未生成
+任何伪标签或 metadata，不属于模型失败。配置生成命令已增加可选
+`--openai-checkpoint`，允许 OpenAI CLIP 与 RemoteCLIP 都从本地 checkpoint 离线加载。
+
 ### Background Loss Weight 验证扫描（完成）
 
 | background weight | best epoch | mIoU | foreground mIoU | pixel accuracy | background IoU | tree IoU |

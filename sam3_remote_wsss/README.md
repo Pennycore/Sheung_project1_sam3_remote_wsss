@@ -331,6 +331,8 @@ Create a paired ranking experiment from the frozen Manual4 config:
 ```bash
 python -m sam3_remote_wsss.prepare_prompt_ranking_configs \
   --base-config "$FULL_ROOT/potsdam_patches_config_manual4.json" \
+  --openai-checkpoint \
+    /home/undergr/Sheungzhen_project_1/checkpoints/open_clip_pytorch_model.bin \
   --remoteclip-checkpoint \
     /home/undergr/Sheungzhen_project_1/checkpoints/RemoteCLIP-ViT-B-32.pt \
   --output-dir "$FULL_ROOT" \
@@ -339,7 +341,7 @@ python -m sam3_remote_wsss.prepare_prompt_ranking_configs \
 
 This writes two configs with the same candidate pool and Top-K rule:
 
-- `potsdam_patches_config_clip_ranked4.json` uses OpenAI CLIP weights.
+- `potsdam_patches_config_clip_ranked4.json` uses local OpenAI CLIP weights.
 - `potsdam_patches_config_remoteclip_ranked4.json` uses RemoteCLIP weights.
 
 When a checkpoint is supplied, the loader creates the OpenCLIP architecture
@@ -347,6 +349,10 @@ without first downloading OpenAI weights. Per-image metadata records the weight
 source, Top-K rule, selected prompts, scores, and tile coordinates. On the
 512-by-512 patch dataset each patch is one tile, so ranking is per patch and per
 positive image-level class. Pixel labels are never read during selection.
+
+If `--openai-checkpoint` is omitted, the OpenAI config keeps a null checkpoint
+and OpenCLIP downloads the `openai` weights on first use. Pass the local
+checkpoint on offline servers.
 
 ## Step 3: Evaluate Pseudo Labels
 

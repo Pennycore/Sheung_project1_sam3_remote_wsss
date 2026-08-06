@@ -1138,6 +1138,23 @@ raw whole-patch image-text similarity 衡量全局描述匹配，不直接衡量
 掩码的效用；Top-K 替换式筛选还会丢失领域提示的互补召回。当前正式方法继续使用
 Manual4，不把 RemoteCLIP-Top4 宣称为改进，也不依据该训练GT结果继续调整 K。
 
+metadata 选择频率进一步解释了该结果。OpenAI CLIP-Top4 的 Manual4 提示占比按类为
+building/car/impervious surface/low vegetation/tree =
+`42.51%/38.53%/32.25%/38.33%/37.19%`，总体约 `37.45%`；它高频选择了
+`rooftops in aerial imagery`、`small cars in aerial imagery`、
+`asphalt surface in aerial imagery`、`lawn in aerial imagery` 和
+`trees in aerial imagery` 等可接地的领域描述。
+
+RemoteCLIP-Top4 的对应占比为 `25.00%/34.41%/25.00%/25.11%/34.05%`，
+总体仅约 `27.78%`。更重要的是，它在全部197个 building patch 上固定选择同一组
+四条提示，在全部238个 impervious surface patch 上也固定选择同一组；low
+vegetation 和 tree 的前三条同样对所有阳性 patch 不变。高频文本集中在
+`a remote sensing image of ...`、`in the center`、`there are several ...` 等
+B2C句式。这表明当前 raw cosine 排序主要反映 RemoteCLIP 预训练语料的句式偏好，
+而非 patch 内容差异或 SAM3 掩码质量。该频率诊断支持终止硬 Top-K 分支；如果以后
+重新使用视觉语言模型，应改为不丢弃 Manual4 的软先验或使用直接面向掩码一致性的
+无GT评分，而不是继续微调 K。
+
 服务器无法连接 Hugging Face，OpenAI CLIP 单图 smoke 在权重下载阶段失败，未生成
 任何伪标签或 metadata，不属于模型失败。配置生成命令已增加可选
 `--openai-checkpoint`，允许 OpenAI CLIP 与 RemoteCLIP 都从本地 checkpoint 离线加载；

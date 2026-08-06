@@ -1101,7 +1101,7 @@ surface labeled IoU 为 `0.9079`，高于 Manual4 的 `0.6149`；这是高精度
 较高覆盖之间的权衡，不否定集成的总体收益。该子集 GT 只用于事后诊断机制，不能
 据此选择新的正式提示词或阈值；Manual4 是实验前已经固定的历史方案。
 
-### CLIP/RemoteCLIP Top-K 提示词排序（待服务器验证）
+### CLIP/RemoteCLIP Top-K 提示词排序（完成）
 
 已实现严格配对的自动提示词排序实验。候选池固定为每类 Manual4 加完整 B2C
 模板，不使用 `max_prompts_per_class` 预截断；OpenAI CLIP 与 RemoteCLIP 均按
@@ -1114,13 +1114,34 @@ surface labeled IoU 为 `0.9079`，高于 Manual4 的 `0.6149`；这是高精度
 - `potsdam_patches_config_remoteclip_ranked4.json`：RemoteCLIP ViT-B/32 权重。
 
 RemoteCLIP checkpoint 模式不再先下载 OpenAI 权重；metadata 会记录权重来源、
-Top-K、分数和每个 patch/class 的选中提示。正式验证顺序为：先在固定256-patch
-子集做各1张 smoke，再并行生成完整256组并评估。该分支当前只有实现与单元测试，
-尚无实验指标，不能宣称优于 Manual4。
+Top-K、分数和每个 patch/class 的选中提示。两种排序器均通过单图 smoke，并在
+固定256-patch子集完成评估：
+
+| Prompt | mIoU | foreground mIoU | labeled mIoU | labeled foreground mIoU | coverage |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Prompt1 | 0.2022 | 0.2427 | 0.4102 | 0.4922 | 0.2175 |
+| B2C4 | 0.2302 | 0.2763 | 0.4274 | 0.5129 | 0.2794 |
+| OpenAI CLIP-Top4 | 0.3008 | 0.3609 | 0.4932 | 0.5918 | 0.3945 |
+| RemoteCLIP-Top4 | 0.2324 | 0.2788 | 0.4259 | 0.5111 | 0.2811 |
+| Manual4 | **0.3800** | **0.4560** | **0.5145** | **0.6173** | **0.6063** |
+
+RemoteCLIP-Top4 相对 OpenAI CLIP-Top4 的 mIoU/foreground mIoU/labeled
+foreground mIoU/coverage 分别下降 `0.0684/0.0821/0.0808/0.1134`；相对
+Manual4 分别下降 `0.1476/0.1772/0.1063/0.3253`。RemoteCLIP-Top4 与 B2C4
+几乎相同，仅 low vegetation 和 car 略有变化，说明它在当前候选池中主要选择了
+通用B2C式描述。
+
+OpenAI CLIP-Top4 明显优于 B2C4，但仍弱于 Manual4。其 strict IoU 在 impervious
+surface/building 上达到 `0.3810/0.5492`，但 low vegetation 仅 `0.0284`；Manual4
+对应为 `0.4907/0.6318/0.2680`。Manual4 每类 coverage 也全部更高。结论是：
+raw whole-patch image-text similarity 衡量全局描述匹配，不直接衡量提示词驱动 SAM3
+掩码的效用；Top-K 替换式筛选还会丢失领域提示的互补召回。当前正式方法继续使用
+Manual4，不把 RemoteCLIP-Top4 宣称为改进，也不依据该训练GT结果继续调整 K。
 
 服务器无法连接 Hugging Face，OpenAI CLIP 单图 smoke 在权重下载阶段失败，未生成
 任何伪标签或 metadata，不属于模型失败。配置生成命令已增加可选
-`--openai-checkpoint`，允许 OpenAI CLIP 与 RemoteCLIP 都从本地 checkpoint 离线加载。
+`--openai-checkpoint`，允许 OpenAI CLIP 与 RemoteCLIP 都从本地 checkpoint 离线加载；
+上传完整权重后 smoke 与256-patch实验均成功。
 
 ### Background Loss Weight 验证扫描（完成）
 

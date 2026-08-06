@@ -552,11 +552,10 @@ CUDA_VISIBLE_DEVICES=0,1 python -m sam3_remote_wsss.train_student \
 - Prompt 消融固定子集已建立：`data/prompt_ablation_256.csv`，覆盖17个train父图和256 patches，各类正样本数为238/197/225/199/85。配置审计确认历史 Prompt4 因手工提示先入队并被 max=4 截断，实际是 Manual4，不是真正B2C模板；后续必须比较 Prompt1、Manual4和 `include_manual_prompts=false` 的真实B2C4，并更正论文命名。
 - 固定256-patch Prompt评估完成：Prompt1/Manual4/B2C4 的 foreground mIoU 为 0.2427/0.4560/0.2763，labeled foreground mIoU 为 0.4922/0.6173/0.5129，coverage 为 0.2175/0.6063/0.2794。Manual4 压倒性最佳；B2C4 主要只改善 low vegetation。正式方法应称 Manual4/domain prompt ensemble。
 - Manual4 四个单提示 Slot 消融完成：Slot1/2/3/4 的 foreground mIoU 为 0.2427/0.2978/0.1701/0.2703，coverage 为 0.2175/0.2194/0.2814/0.2789；最强单提示为 Slot2。Manual4 相对 Slot2 提高 0.1582 foreground mIoU、0.0355 labeled foreground mIoU 和 0.3870 coverage。各 Slot 对类别高度偏科，Manual4 的优势来自互补覆盖，不是某个单提示独占贡献。该训练子集 GT 仅用于机制诊断，不能用于选择新提示词或阈值。
-- CLIP/RemoteCLIP Top-K 自动排序已实现但尚未跑服务器指标。新命令 `prepare_prompt_ranking_configs` 从冻结 Manual4 配置生成严格配对的 OpenAI CLIP-Top4 与 RemoteCLIP-Top4 配置；两者共享 Manual4+B2C 完整候选池并逐 patch、逐阳性类别排序。RemoteCLIP checkpoint 加载不再依赖先下载 OpenAI 权重，metadata 会记录选择来源和分数。下一步先下载 `RemoteCLIP-ViT-B-32.pt`，做1张双方法 smoke，再跑固定256子集；不得使用训练子集像素 GT 调候选池或 Top-K。
-- RemoteCLIP 单图 smoke 已成功；OpenAI CLIP smoke 因服务器 Hugging Face 连接重置而在下载权重阶段失败，未生成输出。`prepare_prompt_ranking_configs` 已增加 `--openai-checkpoint`，可让两个配对方法都离线加载本地权重。下一步在本地下载并上传 `open_clip_pytorch_model.bin`，重新生成配置后补 OpenAI CLIP smoke；这不是模型或显存错误。
+- CLIP/RemoteCLIP Top-K 自动排序完整256-patch实验已完成。OpenAI CLIP-Top4 的 mIoU/foreground mIoU/labeled foreground mIoU/coverage 为 `0.3008/0.3609/0.5918/0.3945`；RemoteCLIP-Top4 为 `0.2324/0.2788/0.5111/0.2811`；Manual4 为 `0.3800/0.4560/0.6173/0.6063`。RemoteCLIP-Top4 几乎退化为 B2C4，且比通用 CLIP-Top4 更差；Manual4 仍显著最佳。结论是 raw whole-patch image-text similarity 不等于提示词的 SAM3 掩码效用，Top-K 替换会损失互补覆盖。该分支按负结果保留，不根据训练子集 GT 继续调 K。
 - Background loss weight 完整验证扫描已冻结：weight 0.10 的 mIoU 为 0.4852，未超过 0.25。按 validation mIoU 固定 0.25 为唯一 test 候选，不再继续细调；其相对默认 1.0 只提升约 0.0025 且 tree 更差，必须等待 test/多 seed 后再判断。
 - 已在单父图 256 patch 上扫描背景和前景阈值，正式数据仍需复核。
-- Prompt1、Manual4、真实 B2C4 与 Manual4 四个单提示 Slot 的伪标签级消融已完成；尚未完成使用 RemoteCLIP 图文相似度自动排序或选择领域提示候选的实验。
+- Prompt1、Manual4、真实 B2C4、四个单提示 Slot、OpenAI CLIP-Top4 与 RemoteCLIP-Top4 的固定256-patch伪标签消融均已完成。下一步只做 metadata 提示选择频率诊断，不再按训练GT调候选池或 Top-K。
 - 尚未统计两张 2080Ti 上完整实验的运行时间和显存。
 
 ## 14. 交接给新 Codex 任务的文本

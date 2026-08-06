@@ -1070,6 +1070,37 @@ Manual4 中的领域同义词和观测视角描述。正式方法必须改称 Ma
 prompt ensemble。下一步拆解 Manual4 的第2/3/4条单提示贡献，而不是扩展
 通用B2C模板数量。
 
+### Manual4 单提示 Slot 消融
+
+在同一固定 `data/prompt_ablation_256.csv` 子集上，将 Manual4 的四个提示位置
+分别单独运行；SAM3 权重、标签、阈值和评估协议保持不变。
+
+| Prompt | mIoU | foreground mIoU | labeled mIoU | labeled foreground mIoU | coverage |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Slot1 | 0.2022 | 0.2427 | 0.4102 | 0.4922 | 0.2175 |
+| Slot2 | **0.2482** | **0.2978** | **0.4849** | **0.5819** | 0.2194 |
+| Slot3 | 0.1417 | 0.1701 | 0.3069 | 0.3683 | **0.2814** |
+| Slot4 | 0.2253 | 0.2703 | 0.3557 | 0.4268 | 0.2789 |
+| Manual4 ensemble | **0.3800** | **0.4560** | **0.5145** | **0.6173** | **0.6063** |
+
+Slot2 是最强单提示，但 Manual4 相对 Slot2 仍提高 `0.1582` foreground mIoU、
+`0.0355` labeled foreground mIoU 和 `0.3870` coverage。Manual4 的 strict 前景
+class IoU 为 impervious surface/building/low vegetation/tree/car =
+`0.4907/0.6318/0.2680/0.1284/0.7611`。
+
+各单提示具有明显类别偏置：Slot1 主要检出 building/car；Slot2 主要检出
+impervious surface、low vegetation 和 car，但 building IoU 为零；Slot3 主要检出
+building 和 impervious surface，tree/car 基本为零；Slot4 主要检出 impervious
+surface、building 和 car，low vegetation/tree 基本为零。Manual4 的每类 coverage
+均高于所有单提示，达到 background/impervious surface/building/low vegetation/tree/car =
+`0.2407/0.7222/0.7400/0.5325/0.3603/0.9287`。因此集成收益来自跨类别和跨表达的
+互补覆盖，而不是重复运行单个强提示。
+
+单提示在少量已标注区域上有时具有更高 class IoU，例如 Slot2 的 impervious
+surface labeled IoU 为 `0.9079`，高于 Manual4 的 `0.6149`；这是高精度、低覆盖与
+较高覆盖之间的权衡，不否定集成的总体收益。该子集 GT 只用于事后诊断机制，不能
+据此选择新的正式提示词或阈值；Manual4 是实验前已经固定的历史方案。
+
 ### Background Loss Weight 验证扫描（完成）
 
 | background weight | best epoch | mIoU | foreground mIoU | pixel accuracy | background IoU | tree IoU |

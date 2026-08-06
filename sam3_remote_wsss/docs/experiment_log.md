@@ -1030,6 +1030,22 @@ vegetation 分别下降约 `0.0093/0.0178/0.0195/0.0516`。该版本没有同时
 回到 Prompt/SAM3 前景伪标签质量，优先改善 impervious surface、low
 vegetation 和 tree。
 
+### Prompt 消融固定子集与配置审计
+
+从 4,352 个 train patches 中以 seed 42 选出固定的 `256` patch 子集，覆盖
+全部 `17` 个训练父图。image-level 正样本数为 impervious surface `238`、
+building `197`、low vegetation `225`、tree `199`、car `85`。固定 CSV 为
+`data/prompt_ablation_256.csv`，后续所有 Prompt 方案必须使用同一CSV、SAM3
+权重和融合阈值。
+
+配置审计发现，历史 `Prompt4` 使用 `include_manual_prompts=true` 且每类
+手工 prompts 恰有4条；`prompts_for_class` 先加入手工提示再追加B2C模板，
+随后 `max_prompts_per_class=4` 截断。因此历史正式 Prompt4 实际是“manual
+domain Prompt4”，不是 RemoteCLIP/B2C Prompt4。历史数值不变，但后续论文
+和表格必须更正命名。新的严格对照定义为：Prompt1 = 每类第一条手工类别名；
+Manual4 = 历史四条手工领域提示；B2C4 = `include_manual_prompts=false` 后
+取4条真正的 RemoteCLIP/B2C 模板。
+
 ### Background Loss Weight 验证扫描（完成）
 
 | background weight | best epoch | mIoU | foreground mIoU | pixel accuracy | background IoU | tree IoU |

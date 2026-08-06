@@ -1010,6 +1010,26 @@ validation background IoU: 0.1804844
 为一半。如果它不能同时超过旧主方法的 validation mIoU `0.4876` 和
 foreground mIoU `0.5493`，则终止解耦损失分支，不继续调参。
 
+### 解耦损失 v2：Semantic Weight 2
+
+```text
+background/foreground-binary/semantic weights: 1/1/2
+best epoch: 8
+validation mIoU: 0.4852818303991467
+validation foreground mIoU: 0.5484561514895836
+validation pixel accuracy: 0.6523226217510347
+validation background IoU: 0.16941022494696217
+```
+
+相对旧主方法，mIoU/foreground mIoU/pixel accuracy 分别变化
+`-0.0022792168/-0.0008675114/-0.0190050266`。tree/car 分别提高
+`0.0389/0.0457`，但 background、impervious surface、building、low
+vegetation 分别下降约 `0.0093/0.0178/0.0195/0.0516`。该版本没有同时超过
+预先固定的两个 validation 门槛，因此不进入 test，解耦损失分支正式终止，
+不再继续搜索 1/1/3 等权重。旧 ToCo `1.0` 主方法仍是六类正式模型；下一步
+回到 Prompt/SAM3 前景伪标签质量，优先改善 impervious surface、low
+vegetation 和 tree。
+
 ### Background Loss Weight 验证扫描（完成）
 
 | background weight | best epoch | mIoU | foreground mIoU | pixel accuracy | background IoU | tree IoU |

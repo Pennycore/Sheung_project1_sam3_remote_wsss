@@ -186,6 +186,13 @@ python -m sam3_remote_wsss.generate_pseudo_labels \
 
 python -m sam3_remote_wsss.summarize_candidates \
   --candidate-dir runs/manual4_candidates_256_v1/candidates
+
+python -m sam3_remote_wsss.analyze_candidate_quality \
+  --config "$FULL_ROOT/potsdam_patches_config_manual4.json" \
+  --labels-csv data/prompt_ablation_256.csv \
+  --candidate-dir runs/manual4_candidates_256_v1/candidates \
+  --output runs/manual4_candidates_256_v1/candidate_quality.json \
+  --require-all
 ```
 
 Candidate caching is opt-in and does not alter the normal fusion policy. Each
@@ -193,6 +200,11 @@ compressed cache stores the class, exact prompt, SAM score, area, bounding box,
 tile origin, and losslessly packed binary mask. When both `--save-candidates`
 and `--skip-existing` are used, an image is complete only if its pseudo label
 and both candidate-cache files exist.
+
+`analyze_candidate_quality` is an offline diagnostic. It reads evaluation GT
+to report candidate purity, prompted-class versus dominant-GT confusion, and
+pixel precision/recall/IoU at each distinct-prompt support threshold. GT is not
+used to generate candidates, change pseudo labels, or train the student.
 
 Important config fields:
 

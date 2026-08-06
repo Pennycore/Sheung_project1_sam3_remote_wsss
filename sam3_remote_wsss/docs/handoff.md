@@ -557,7 +557,7 @@ CUDA_VISIBLE_DEVICES=0,1 python -m sam3_remote_wsss.train_student \
 - Background loss weight 完整验证扫描已冻结：weight 0.10 的 mIoU 为 0.4852，未超过 0.25。按 validation mIoU 固定 0.25 为唯一 test 候选，不再继续细调；其相对默认 1.0 只提升约 0.0025 且 tree 更差，必须等待 test/多 seed 后再判断。
 - 已在单父图 256 patch 上扫描背景和前景阈值，正式数据仍需复核。
 - Prompt1、Manual4、真实 B2C4、四个单提示 Slot、OpenAI CLIP-Top4 与 RemoteCLIP-Top4 的固定256-patch伪标签消融均已完成。下一步只做 metadata 提示选择频率诊断，不再按训练GT调候选池或 Top-K。
-- 2026-08-07 已新增逐提示词、逐实例SAM3候选缓存：`generate_pseudo_labels --save-candidates` 会在不改变Manual4融合结果的前提下保存压缩NPZ和JSON；`summarize_candidates` 可汇总每类/每提示词候选数及分数、面积分布。32项本地测试通过，服务器固定256-patch候选尚未生成。下一步先跑单patch smoke和双卡两shard缓存，再做mask purity、提示支持数及masked-region类别一致性诊断；暂不训练新student。
+- 2026-08-07 逐提示词、逐实例SAM3候选缓存已在固定256-patch完成，共2,493个候选；重建伪标签的 mIoU/foreground mIoU/labeled foreground mIoU/coverage 为 `0.3800/0.4560/0.6173/0.6063`，与Manual4历史基线完全一致。新增只读 `analyze_candidate_quality`，统计候选纯度、语义混淆和逐提示支持阈值；34项本地测试通过。下一步服务器拉取并运行该报告，暂不训练新student。
 - 尚未统计两张 2080Ti 上完整实验的运行时间和显存。
 
 ## 14. 交接给新 Codex 任务的文本

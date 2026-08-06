@@ -29,9 +29,10 @@ RemoteCLIP-Top4 `0.2788`。
 
 当前下一阶段是伪标签语义校正，不再继续搜索分割头和背景损失权重。代码已新增
 `generate_pseudo_labels --save-candidates` 和 `summarize_candidates`，用于缓存并汇总
-逐提示词、逐实例SAM3候选掩码。服务器尚未生成该缓存；先在固定256-patch子集完成
-候选缓存，再诊断mask purity、提示词一致性和masked-region类别一致性。旧章节中的
-早期“尚未完成”描述保留作历史记录，本节为最新状态。
+逐提示词、逐实例SAM3候选掩码。固定256-patch缓存已完成，共2,493个候选，且重建
+伪标签与Manual4基线完全一致。代码新增 `analyze_candidate_quality`，下一步在服务器
+运行只读GT诊断，统计mask purity、提示词一致性和语义混淆，再决定是否进入
+masked-region分类。旧章节中的早期“尚未完成”描述保留作历史记录，本节为最新状态。
 
 ## 2. 已经完成
 

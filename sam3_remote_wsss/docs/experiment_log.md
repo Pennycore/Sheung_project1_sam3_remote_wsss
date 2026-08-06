@@ -1160,7 +1160,7 @@ B2C句式。这表明当前 raw cosine 排序主要反映 RemoteCLIP 预训练�
 `--openai-checkpoint`，允许 OpenAI CLIP 与 RemoteCLIP 都从本地 checkpoint 离线加载；
 上传完整权重后 smoke 与256-patch实验均成功。
 
-### SAM3逐提示词候选缓存（代码完成，服务器实验待运行）
+### SAM3逐提示词候选缓存（固定256-patch缓存与验收完成）
 
 日期：2026-08-07。下一阶段不再继续调整分割头或背景权重，而是诊断SAM3伪标签的
 语义错误与覆盖不足。正式依据如下：完整train伪标签 strict foreground mIoU
@@ -1178,13 +1178,32 @@ SAM3-only stitched test foreground mIoU 为 `0.6097 +/- 0.0042`，当前主方�
 
 新增 `python -m sam3_remote_wsss.summarize_candidates`，汇总图像数、候选数、
 每类/每提示词候选数、SAM分数分位数、面积分位数和缓存体积，无需解压全部掩码。
-本地单元测试共32项通过；尚未运行服务器SAM3，因此这里不记录任何新精度结果。
+固定256-patch缓存已在两张2080Ti上完成。实际得到 `2,493` 个候选，压缩缓存总计
+`2,596,465` bytes。候选数按 impervious surface/building/low vegetation/tree/car
+分别为 `605/246/232/143/1267`；至少产生一个候选的patch数分别为
+`216/120/102/54/84`。SAM分数中位数为 `0.7164`，面积中位数为 `3,294` 像素。
+
+提示贡献高度不均衡：car的三条有效提示分别产生 `436/426/405` 个候选，覆盖较均衡；
+low vegetation的232个候选中 `grass` 独占207个，`low vegetation` 21个，`lawn in
+aerial imagery` 仅4个，第四条提示为0；tree的143个候选中 `tree` 90个、`trees in
+aerial imagery` 51个、`overhead view of trees` 2个，`tree crown` 为0。building
+同样只有三条提示产生候选。这进一步说明Manual4的互补性主要来自少数有效提示，且
+不同类别的提示响应结构差异很大。
+
+重新生成的256张伪标签与历史Manual4基线逐项一致：mIoU `0.3800`、foreground
+mIoU `0.4560`、labeled foreground mIoU `0.6173`、coverage `0.6063`，全部256张
+成功评估且无skip。因此候选缓存没有改变SAM3过滤或融合结果。
+
+新增只读 `analyze_candidate_quality` 诊断器，输出每个候选的目标类别纯度、背景/其他
+前景污染、主导GT类别、候选级和像素级混淆，以及每类不同提示支持阈值下的
+precision/recall/binary IoU。逐候选记录另存JSONL。GT仅用于离线评价，不参与生成、
+伪标签修改或训练；重叠候选像素在候选级汇总中会重复计数，并在报告协议中显式标记。
+本地单元测试现为34项通过，服务器尚需拉取该诊断代码并运行报告。
 
 固定实验协议继续使用512x512 patch和同一 `data/prompt_ablation_256.csv`，不是改成
-256x256输入。服务器先完成单patch smoke，再用两张2080Ti按两个shard生成256个
-patch候选。候选完整性确认后，下一项才是基于GT的离线诊断：计算每个SAM3候选的
-mask purity、Manual4提示词支持数，以及CAM/CLIP/RemoteCLIP masked-region分类
-一致率。GT只用于诊断和验证，不进入候选生成或训练。
+256x256输入。候选缓存和基线完整性已确认；下一项是运行上述GT离线诊断，先回答
+SAM3候选究竟是类别错误还是覆盖不足，再决定是否进入CAM/CLIP/RemoteCLIP
+masked-region分类实验。GT只用于诊断和验证，不进入候选生成或训练。
 
 ### Background Loss Weight 验证扫描（完成）
 

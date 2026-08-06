@@ -1046,6 +1046,30 @@ domain Prompt4”，不是 RemoteCLIP/B2C Prompt4。历史数值不变，但后�
 Manual4 = 历史四条手工领域提示；B2C4 = `include_manual_prompts=false` 后
 取4条真正的 RemoteCLIP/B2C 模板。
 
+### Prompt1 vs Manual4 vs B2C4 伪标签评估
+
+固定256-patch、17父图子集结果：
+
+| Prompt | mIoU | foreground mIoU | labeled mIoU | labeled foreground mIoU | coverage |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Prompt1 | 0.2022 | 0.2427 | 0.4102 | 0.4922 | 0.2175 |
+| Manual4 | **0.3800** | **0.4560** | **0.5145** | **0.6173** | **0.6063** |
+| B2C4 | 0.2302 | 0.2763 | 0.4274 | 0.5129 | 0.2794 |
+
+Manual4 相对 Prompt1 提高约 `0.1778` mIoU、`0.2133` foreground mIoU、
+`0.1251` labeled foreground mIoU 和 `0.3888` coverage；相对 B2C4 提高
+约 `0.1498/0.1797/0.1044/0.3269`。Manual4 的 strict class IoU 为
+impervious surface `0.4907`、building `0.6318`、low vegetation `0.2680`、
+tree `0.1284`、car `0.7611`。
+
+B2C4 相对 Prompt1 的主要有效变化集中在 low vegetation：strict IoU 从
+`0.0104` 增至 `0.1866`，覆盖率从 `0.2182` 增至 `0.3999`；building/car
+几乎完全相同，impervious surface 仍约 `0.05`，tree 反而略降。这说明通用
+B2C数量/位置模板并不适合直接驱动当前SAM3遥感语义掩码；真正的提升来自
+Manual4 中的领域同义词和观测视角描述。正式方法必须改称 Manual4/domain
+prompt ensemble。下一步拆解 Manual4 的第2/3/4条单提示贡献，而不是扩展
+通用B2C模板数量。
+
 ### Background Loss Weight 验证扫描（完成）
 
 | background weight | best epoch | mIoU | foreground mIoU | pixel accuracy | background IoU | tree IoU |

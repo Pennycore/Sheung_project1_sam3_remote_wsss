@@ -550,6 +550,7 @@ CUDA_VISIBLE_DEVICES=0,1 python -m sam3_remote_wsss.train_student \
 - 解耦损失 v1（binary background/foreground/semantic 三项等权）验证失败：mIoU 0.4747、foreground mIoU 0.5335，分别低于旧主方法 0.0129/0.0158，不进入 test。只允许再运行一个有结构依据的 `semantic_weight=2` 版本，使语义项占总损失一半；若不能同时超过旧主方法两个验证指标，就终止该分支。
 - 解耦损失 v2（1/1/2）validation mIoU 0.4853、foreground mIoU 0.5485，仍分别低于旧主方法 0.0023/0.0009，未通过预设门槛。因此不做 test并终止解耦损失调参；旧 ToCo weight 1.0 保持正式六类模型，下一步转向 Prompt/SAM3 前景伪标签质量。
 - Prompt 消融固定子集已建立：`data/prompt_ablation_256.csv`，覆盖17个train父图和256 patches，各类正样本数为238/197/225/199/85。配置审计确认历史 Prompt4 因手工提示先入队并被 max=4 截断，实际是 Manual4，不是真正B2C模板；后续必须比较 Prompt1、Manual4和 `include_manual_prompts=false` 的真实B2C4，并更正论文命名。
+- 固定256-patch Prompt评估完成：Prompt1/Manual4/B2C4 的 foreground mIoU 为 0.2427/0.4560/0.2763，labeled foreground mIoU 为 0.4922/0.6173/0.5129，coverage 为 0.2175/0.6063/0.2794。Manual4 压倒性最佳；B2C4 主要只改善 low vegetation。正式方法应称 Manual4/domain prompt ensemble，下一步拆解第2/3/4条领域提示的单独贡献。
 - Background loss weight 完整验证扫描已冻结：weight 0.10 的 mIoU 为 0.4852，未超过 0.25。按 validation mIoU 固定 0.25 为唯一 test 候选，不再继续细调；其相对默认 1.0 只提升约 0.0025 且 tree 更差，必须等待 test/多 seed 后再判断。
 - 已在单父图 256 patch 上扫描背景和前景阈值，正式数据仍需复核。
 - 尚未完成完整 Prompt1/Prompt4/RemoteCLIP 排序消融。

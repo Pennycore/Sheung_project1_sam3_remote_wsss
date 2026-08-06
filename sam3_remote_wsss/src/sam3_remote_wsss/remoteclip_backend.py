@@ -22,14 +22,27 @@ class RemoteCLIPPromptSelector:
         self.config = config
         self.open_clip = open_clip
         self.torch = torch
+        checkpoint_path = config.checkpoint_path
+        if checkpoint_path is not None and not checkpoint_path.is_file():
+            raise FileNotFoundError(f"RemoteCLIP checkpoint not found: {checkpoint_path}")
+
+        pretrained = None if checkpoint_path is not None else "openai"
         self.model, _, self.preprocess = open_clip.create_model_and_transforms(
             config.model_name,
-            pretrained="openai",
+            pretrained=pretrained,
             device=config.device,
         )
-        if config.checkpoint_path is not None:
-            ckpt = torch.load(str(config.checkpoint_path), map_location="cpu")
-            self.model.load_state_dict(ckpt)
+        if checkpoint_path is not None:
+            ckpt = torch.load(str(checkpoint_path), map_location="cpu")
+            state_dict = (
+                ckpt["state_dict"]
+                if isinstance(ckpt, dict) and "state_dict" in ckpt
+                else ckpt
+            )
+            self.model.load_state_dict(state_dict)
+            self.weights_source = str(checkpoint_path)
+        else:
+            self.weights_source = "openai"
         self.model = self.model.to(config.device).eval()
         self.tokenizer = open_clip.get_tokenizer(config.model_name)
         self._text_cache: dict[tuple[str, ...], object] = {}

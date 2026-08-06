@@ -85,6 +85,9 @@ def parse_config(raw: dict[str, Any]) -> ProjectConfig:
     checkpoint_raw = raw.get("checkpoint_path")
     remoteclip_raw = raw.get("remoteclip", {})
     remoteclip_ckpt = remoteclip_raw.get("checkpoint_path")
+    remoteclip_top_k = int(remoteclip_raw.get("top_k_per_class", 2))
+    if remoteclip_top_k <= 0:
+        raise ValueError("remoteclip.top_k_per_class must be positive")
     prompting_raw = raw.get("prompting", {})
     background_prompting_raw = raw.get("background_prompting", {})
     ignore_index = int(raw.get("ignore_index", 255))
@@ -122,7 +125,7 @@ def parse_config(raw: dict[str, Any]) -> ProjectConfig:
             model_name=str(remoteclip_raw.get("model_name", "ViT-B-32")),
             checkpoint_path=Path(remoteclip_ckpt) if remoteclip_ckpt else None,
             device=str(remoteclip_raw.get("device", raw.get("device", "cuda"))),
-            top_k_per_class=int(remoteclip_raw.get("top_k_per_class", 2)),
+            top_k_per_class=remoteclip_top_k,
             min_score=(
                 float(remoteclip_raw["min_score"])
                 if remoteclip_raw.get("min_score") is not None

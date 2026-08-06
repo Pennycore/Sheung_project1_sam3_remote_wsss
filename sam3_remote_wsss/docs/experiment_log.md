@@ -1101,6 +1101,23 @@ surface labeled IoU 为 `0.9079`，高于 Manual4 的 `0.6149`；这是高精度
 较高覆盖之间的权衡，不否定集成的总体收益。该子集 GT 只用于事后诊断机制，不能
 据此选择新的正式提示词或阈值；Manual4 是实验前已经固定的历史方案。
 
+### CLIP/RemoteCLIP Top-K 提示词排序（待服务器验证）
+
+已实现严格配对的自动提示词排序实验。候选池固定为每类 Manual4 加完整 B2C
+模板，不使用 `max_prompts_per_class` 预截断；OpenAI CLIP 与 RemoteCLIP 均按
+当前 512 patch 和 image-level 阳性类别独立选择每类 Top-4，再调用 SAM3。两组配置
+除 `checkpoint_path` 外完全相同，像素 GT 不参与排序或候选选择。
+
+新增命令 `python -m sam3_remote_wsss.prepare_prompt_ranking_configs`，自动生成：
+
+- `potsdam_patches_config_clip_ranked4.json`：OpenAI CLIP 权重。
+- `potsdam_patches_config_remoteclip_ranked4.json`：RemoteCLIP ViT-B/32 权重。
+
+RemoteCLIP checkpoint 模式不再先下载 OpenAI 权重；metadata 会记录权重来源、
+Top-K、分数和每个 patch/class 的选中提示。正式验证顺序为：先在固定256-patch
+子集做各1张 smoke，再并行生成完整256组并评估。该分支当前只有实现与单元测试，
+尚无实验指标，不能宣称优于 Manual4。
+
 ### Background Loss Weight 验证扫描（完成）
 
 | background weight | best epoch | mIoU | foreground mIoU | pixel accuracy | background IoU | tree IoU |

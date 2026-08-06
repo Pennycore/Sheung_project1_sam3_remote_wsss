@@ -4,6 +4,7 @@ import csv
 import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -16,7 +17,11 @@ from sam3_remote_wsss.cam.fusion import (
     normalize_cams,
 )
 from sam3_remote_wsss.cam.dataset import PotsdamImageLevelDataset
-from sam3_remote_wsss.config import ClassSpec, parse_config
+from sam3_remote_wsss.config import (
+    ClassSpec,
+    RemoteCLIPConfig,
+    parse_config,
+)
 from sam3_remote_wsss.evaluate_pseudo_labels import (
     compute_evaluation_metrics,
     main as evaluate_main,
@@ -39,6 +44,11 @@ from sam3_remote_wsss.prepare_potsdam_patches import (
     load_parent_split,
     prepare_patches,
 )
+from sam3_remote_wsss.prepare_prompt_ranking_configs import (
+    build_prompt_ranking_configs,
+)
+from sam3_remote_wsss.prompts import prompts_for_class
+from sam3_remote_wsss.remoteclip_backend import RemoteCLIPPromptSelector
 from sam3_remote_wsss.repair_palette_label import repair_palette_label
 from sam3_remote_wsss.train_cam import (
     _ensure_parent_disjoint,
@@ -71,6 +81,122 @@ CLASSES = (
 
 
 class PotsdamMappingTests(unittest.TestCase):
+    def test_remoteclip_checkpoint_skips_openai_weight_download(self) -> None:
+        calls = []
+
+        class FakeModel:
+            def load_state_dict(self, state_dict):
+                self.state_dict = state_dict
+
+            def to(self, _device):
+                return self
+
+            def eval(self):
+                return self
+
+        fake_open_clip = SimpleNamespace(
+            create_model_and_transforms=lambda model_name, pretrained, device: (
+                calls.append((model_name, pretrained, device)) or FakeModel(),
+                None,
+                object(),
+            ),
+            get_tokenizer=lambda _model_name: object(),
+        )
+
+        with TemporaryDirectory() as tmp_dir:
+            checkpoint_path = Path(tmp_dir) / "RemoteCLIP-ViT-B-32.pt"
+            checkpoint_path.touch()
+            config = RemoteCLIPConfig(
+                enabled=True,
+                model_name="ViT-B-32",
+                checkpoint_path=checkpoint_path,
+                device="cpu",
+                top_k_per_class=4,
+                min_score=None,
+            )
+            with (
+                patch.dict("sys.modules", {"open_clip": fake_open_clip}),
+                patch("torch.load", return_value={"weight": object()}),
+            ):
+                selector = RemoteCLIPPromptSelector(config)
+
+        self.assertEqual(calls, [("ViT-B-32", None, "cpu")])
+        self.assertEqual(selector.weights_source, str(checkpoint_path))
+
+    def test_prompt_ranking_configs_pair_openai_and_remoteclip_weights(self) -> None:
+        base = _config(Path("/tmp/potsdam"))
+        clip_raw, remoteclip_raw = build_prompt_ranking_configs(
+            base,
+            "/tmp/RemoteCLIP-ViT-B-32.pt",
+            top_k=4,
+        )
+
+        clip_config = parse_config(clip_raw)
+        remoteclip_config = parse_config(remoteclip_raw)
+
+        self.assertTrue(clip_config.remoteclip.enabled)
+        self.assertIsNone(clip_config.remoteclip.checkpoint_path)
+        self.assertEqual(
+            remoteclip_config.remoteclip.checkpoint_path,
+            Path("/tmp/RemoteCLIP-ViT-B-32.pt"),
+        )
+        self.assertEqual(remoteclip_config.remoteclip.top_k_per_class, 4)
+        self.assertEqual(remoteclip_config.prompting.style, "remoteclip_b2c")
+        self.assertTrue(remoteclip_config.prompting.include_manual_prompts)
+        self.assertIsNone(remoteclip_config.prompting.max_prompts_per_class)
+        self.assertGreater(
+            len(
+                prompts_for_class(
+                    remoteclip_config.classes[0],
+                    remoteclip_config.prompting,
+                )
+            ),
+            remoteclip_config.remoteclip.top_k_per_class,
+        )
+
+    def test_remoteclip_selector_keeps_top_k_for_each_class(self) -> None:
+        selector = object.__new__(RemoteCLIPPromptSelector)
+        selector.config = RemoteCLIPConfig(
+            enabled=True,
+            model_name="ViT-B-32",
+            checkpoint_path=None,
+            device="cpu",
+            top_k_per_class=2,
+            min_score=0.5,
+        )
+        selector.score_prompts = lambda _image, _prompts: np.asarray(
+            [0.1, 0.9, 0.8, 0.7, 0.2, 0.6],
+            dtype=np.float32,
+        )
+        first = ClassSpec(1, "first", (1, 1, 1), ("p1", "p2", "p3"))
+        second = ClassSpec(2, "second", (2, 2, 2), ("q1", "q2", "q3"))
+        jobs = [
+            (first, "p1"),
+            (first, "p2"),
+            (first, "p3"),
+            (second, "q1"),
+            (second, "q2"),
+            (second, "q3"),
+        ]
+
+        selected = selector.select(np.zeros((4, 4, 3), dtype=np.uint8), jobs)
+
+        self.assertEqual(
+            [(spec.name, prompt) for spec, prompt, _score in selected],
+            [
+                ("first", "p2"),
+                ("first", "p3"),
+                ("second", "q1"),
+                ("second", "q3"),
+            ],
+        )
+
+    def test_remoteclip_top_k_must_be_positive(self) -> None:
+        raw = _config(Path("/tmp/potsdam"))
+        raw["remoteclip"] = {"enabled": True, "top_k_per_class": 0}
+        with self.assertRaisesRegex(ValueError, "top_k_per_class"):
+            parse_config(raw)
+
     def test_toco_loss_supports_normalized_background_weight(self) -> None:
         import torch
 

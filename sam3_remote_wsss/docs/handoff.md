@@ -552,6 +552,7 @@ CUDA_VISIBLE_DEVICES=0,1 python -m sam3_remote_wsss.train_student \
 - Prompt 消融固定子集已建立：`data/prompt_ablation_256.csv`，覆盖17个train父图和256 patches，各类正样本数为238/197/225/199/85。配置审计确认历史 Prompt4 因手工提示先入队并被 max=4 截断，实际是 Manual4，不是真正B2C模板；后续必须比较 Prompt1、Manual4和 `include_manual_prompts=false` 的真实B2C4，并更正论文命名。
 - 固定256-patch Prompt评估完成：Prompt1/Manual4/B2C4 的 foreground mIoU 为 0.2427/0.4560/0.2763，labeled foreground mIoU 为 0.4922/0.6173/0.5129，coverage 为 0.2175/0.6063/0.2794。Manual4 压倒性最佳；B2C4 主要只改善 low vegetation。正式方法应称 Manual4/domain prompt ensemble。
 - Manual4 四个单提示 Slot 消融完成：Slot1/2/3/4 的 foreground mIoU 为 0.2427/0.2978/0.1701/0.2703，coverage 为 0.2175/0.2194/0.2814/0.2789；最强单提示为 Slot2。Manual4 相对 Slot2 提高 0.1582 foreground mIoU、0.0355 labeled foreground mIoU 和 0.3870 coverage。各 Slot 对类别高度偏科，Manual4 的优势来自互补覆盖，不是某个单提示独占贡献。该训练子集 GT 仅用于机制诊断，不能用于选择新提示词或阈值。
+- CLIP/RemoteCLIP Top-K 自动排序已实现但尚未跑服务器指标。新命令 `prepare_prompt_ranking_configs` 从冻结 Manual4 配置生成严格配对的 OpenAI CLIP-Top4 与 RemoteCLIP-Top4 配置；两者共享 Manual4+B2C 完整候选池并逐 patch、逐阳性类别排序。RemoteCLIP checkpoint 加载不再依赖先下载 OpenAI 权重，metadata 会记录选择来源和分数。下一步先下载 `RemoteCLIP-ViT-B-32.pt`，做1张双方法 smoke，再跑固定256子集；不得使用训练子集像素 GT 调候选池或 Top-K。
 - Background loss weight 完整验证扫描已冻结：weight 0.10 的 mIoU 为 0.4852，未超过 0.25。按 validation mIoU 固定 0.25 为唯一 test 候选，不再继续细调；其相对默认 1.0 只提升约 0.0025 且 tree 更差，必须等待 test/多 seed 后再判断。
 - 已在单父图 256 patch 上扫描背景和前景阈值，正式数据仍需复核。
 - Prompt1、Manual4、真实 B2C4 与 Manual4 四个单提示 Slot 的伪标签级消融已完成；尚未完成使用 RemoteCLIP 图文相似度自动排序或选择领域提示候选的实验。

@@ -73,6 +73,7 @@ class SAM3WSSSPseudoLabeler:
                 "background_prompts": list(self.config.background_prompting.prompts),
                 "kept_background_masks": 0,
                 "remoteclip_enabled": self.config.remoteclip.enabled,
+                "prompt_selector": self._prompt_selector_metadata(),
             }
             return metadata
 
@@ -91,6 +92,7 @@ class SAM3WSSSPseudoLabeler:
             "background_prompting_enabled": self.config.background_prompting.enabled,
             "background_prompts": list(self.config.background_prompting.prompts),
             "remoteclip_enabled": self.config.remoteclip.enabled,
+            "prompt_selector": self._prompt_selector_metadata(),
             "remoteclip_selected_prompts": {},
         }
 
@@ -170,6 +172,19 @@ class SAM3WSSSPseudoLabeler:
         }
         self._save_outputs(image_id, image, label, metadata)
         return metadata
+
+    def _prompt_selector_metadata(self) -> dict:
+        config = self.config.remoteclip
+        checkpoint_path = config.checkpoint_path
+        return {
+            "enabled": config.enabled,
+            "model_name": config.model_name,
+            "weights_source": (
+                str(checkpoint_path) if checkpoint_path is not None else "openai"
+            ),
+            "top_k_per_class": config.top_k_per_class,
+            "min_score": config.min_score,
+        }
 
     def _save_outputs(self, image_id: str, image, label, metadata: dict) -> None:
         save_label_png(label, self.output_dir / "pseudo_labels" / f"{image_id}.png")

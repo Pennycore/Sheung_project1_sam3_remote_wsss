@@ -1366,6 +1366,25 @@ low-vegetation-only 相对 baseline 的 mIoU/mF1/foreground mIoU 分别下降
 `parent_macro`。父图由 patch ID 的 `_xNNNN_yNNNN` 后缀识别；`parent_macro` 对各父图指标做
 不按像素量加权的算术平均，并报告总体标准差（`ddof=0`）。原有全局像素汇总指标保持不变。
 
+逐父图 validation 结果进一步确认规则稳定。baseline/impervious-only 的全局 mIoU 为
+`0.3494/0.3629`，父图宏平均 mIoU 为 `0.3406 +/- 0.0450` 和
+`0.3544 +/- 0.0380`。六张父图中五张同时获得正 mIoU 与正 mF1 增量；逐图 mIoU 增量依次为
+`+0.0330/+0.0095/+0.0184/-0.0133/+0.0266/+0.0085`。唯一失败父图是
+`top_potsdam_5_11`，其 mIoU/mF1/OA 分别下降 `0.0133/0.0082/0.0514`。规则通过稳定性检查，
+保持 `mean CAM + impervious_surface-only reject` 不变。
+
+在扩展完整候选缓存前重新审视公开对比协议。决定保留现有512、17/6/14、六类背景显式协议
+作为完整消融，同时新增独立的论文对齐 Potsdam 协议，并在其后增加 LoveDA 作为泛化数据集，
+不直接替换 Potsdam。论文对齐协议为23张训练父图、14张官方评估父图、排除
+`top_potsdam_7_10`、256步长非重叠网格、边缘 padding、clutter ignore、五前景类指标。
+每张6000x6000父图产生24x24=576个 patch，预期训练/测试 patch 数为13,248/8,064。
+
+为避免边界窗口向内平移造成隐式重叠，`generate_tiles` 和 `prepare_potsdam_patches` 新增
+`edge_mode=pad`；边缘图像零填充、边缘 GT 填充为未知色并映射到255。数据准备器同时新增
+`--ignore-background-labels`，只修改生成数据集的配置映射，不修改原始 GT。新划分清单位于
+`configs/potsdam_parent_split_23_0_14_paper.json`。下一步先生成单父图576-patch smoke，核验
+数量、固定尺寸、split 和 ignore 映射，再生成全量论文协议数据。
+
 指标报告规范同步更新：后续所有完整像素预测必须至少报告六类 `mIoU`、六类宏平均 `mF1`
 和 `OA`，并附逐类 IoU/F1 及前景宏平均。已有 `pixel_accuracy` 与 `OA` 数值相同，继续保留用于
 兼容历史 JSON。带 `255` 的伪标签同时报告 strict 和 labeled-only 指标及 coverage；候选级

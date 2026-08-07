@@ -148,6 +148,30 @@ top_potsdam_2_10,1,1,1,1,1
 `clutter/background` is class ID `0`, not a prompted foreground class. Unknown
 GT colors remain `255` ignore.
 
+For paper-aligned Potsdam WSSS experiments, create a separate 256-pixel
+dataset instead of changing the existing 512-pixel dataset:
+
+```bash
+python -m sam3_remote_wsss.prepare_potsdam_patches \
+  --config configs/potsdam_server_prompt4.json \
+  --output-root /home/undergr/remote_dataset/Postdam_patches_256_paper \
+  --patch-size 256 \
+  --patch-overlap 0 \
+  --edge-mode pad \
+  --min-class-pixels 1 \
+  --ignore-background-labels \
+  --parent-split configs/potsdam_parent_split_23_0_14_paper.json \
+  --compression deflate \
+  --skip-existing
+```
+
+`edge-mode pad` produces a fixed non-overlapping 24 x 24 grid for each
+6000 x 6000 parent. Right and bottom padding maps to `ignore_index` in the
+output config. `--ignore-background-labels` also maps Potsdam clutter to
+ignore, so paper-facing mIoU is the five-class `foreground_miou`. Expected
+counts are 13,248 train patches, 0 internal validation patches, and 8,064
+official evaluation patches. The existing 17/6/14 protocol remains unchanged.
+
 ## Step 2: Generate SAM3 Pseudo Labels
 
 ```powershell

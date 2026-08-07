@@ -165,6 +165,48 @@ runs/student_5patches/checkpoints/last.pt
 
 这个实验只验证训练趋势，不用于汇报最终精度。
 
+## 5.5 Potsdam 论文对齐协议
+
+这套数据与现有 `Postdam_patches_512_full` 并存，不覆盖历史实验。协议固定为23张训练父图、
+14张官方评估父图、排除 `top_potsdam_7_10`，每张6000像素父图按256步长生成24x24个 patch。
+右侧和下侧不足256像素的区域用零填充；其 GT 与红色 clutter 都作为255 ignore。image-level
+标签只表示 patch 内类别是否存在，不按类别比例筛除任何 patch。
+
+先生成单父图 smoke：
+
+```bash
+export PAPER_ROOT=/home/undergr/remote_dataset/Postdam_patches_256_paper
+export PAPER_SOURCE_CONFIG=configs/potsdam_server_prompt4.json
+
+python -m sam3_remote_wsss.prepare_potsdam_patches \
+  --config "$PAPER_SOURCE_CONFIG" \
+  --output-root "$PAPER_ROOT" \
+  --patch-size 256 \
+  --patch-overlap 0 \
+  --edge-mode pad \
+  --min-class-pixels 1 \
+  --ignore-background-labels \
+  --parent-split configs/potsdam_parent_split_23_0_14_paper.json \
+  --compression deflate \
+  --limit 1 \
+  --skip-existing
+```
+
+smoke 应得到 `patches=576`、`edge_mode=pad`、`ignore_background_labels=true`。确认后删除
+`--limit 1` 原样续跑；`--skip-existing` 会复用已生成的576个 patch。全量预期为：
+
+```text
+train parents/patches: 23 / 13248
+val parents/patches:    0 / 0
+test parents/patches:  14 / 8064
+excluded parent: top_potsdam_7_10
+total patches: 21312
+```
+
+该协议用于和采用五个前景类别的 Potsdam WSSS 论文比较，主指标读取
+`foreground_miou`、`foreground_mf1` 和 `OA`。现有六类 mIoU 及17/6/14结果继续作为本工程
+内部完整协议，不与论文表格中的五类 mIoU 混写。
+
 ## 6. 两张 2080Ti 生成伪标签
 
 先去掉 `--limit 1`，为所有原始大图补齐 patch 数据集。`--skip-existing` 会复用 smoke 阶段已经写好的 TIFF：

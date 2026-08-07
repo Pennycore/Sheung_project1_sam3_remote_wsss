@@ -71,6 +71,7 @@ from sam3_remote_wsss.train_student import (
     _ensure_parent_disjoint as ensure_student_parent_disjoint,
     segmentation_metrics,
 )
+from sam3_remote_wsss.tiling import generate_tiles
 
 
 CLASSES = (
@@ -771,6 +772,95 @@ class StudentValidationTests(unittest.TestCase):
 
 
 class PotsdamPatchDatasetTests(unittest.TestCase):
+    def test_paper_aligned_grid_pads_edges_and_ignores_background(self) -> None:
+        tiles = generate_tiles(
+            width=6000,
+            height=6000,
+            tile_size=256,
+            overlap=0,
+            edge_mode="pad",
+        )
+        self.assertEqual(len(tiles), 24 * 24)
+        self.assertEqual((tiles[-1].x0, tiles[-1].y0), (5888, 5888))
+        self.assertEqual((tiles[-1].x1, tiles[-1].y1), (6144, 6144))
+
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source_root = root / "source"
+            image_root = source_root / "4_Ortho_RGBIR"
+            label_root = source_root / "5_Labels_all"
+            image_root.mkdir(parents=True)
+            label_root.mkdir(parents=True)
+
+            image = np.full((3, 3, 4), 7, dtype=np.uint8)
+            label = np.full((3, 3, 3), (255, 0, 0), dtype=np.uint8)
+            label[2, 2] = (0, 0, 255)
+            tifffile.imwrite(
+                image_root / "top_potsdam_2_10_RGBIR.tif",
+                image,
+                photometric="rgb",
+            )
+            tifffile.imwrite(
+                label_root / "top_potsdam_2_10_label.tif",
+                label,
+                photometric="rgb",
+            )
+            config_path = root / "config.json"
+            config_path.write_text(json.dumps(_config(source_root)), encoding="utf-8")
+            split_path = root / "split.json"
+            split_path.write_text(
+                json.dumps(
+                    {
+                        "train": ["top_potsdam_2_10"],
+                        "val": [],
+                        "test": [],
+                        "exclude": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            output_root = root / "paper_patches"
+            summary = prepare_patches(
+                config_path,
+                output_root,
+                patch_size=2,
+                patch_overlap=0,
+                edge_mode="pad",
+                min_class_pixels=1,
+                ignore_background_labels=True,
+                parent_split=split_path,
+            )
+
+            self.assertEqual(summary["patches"], 4)
+            self.assertEqual(summary["edge_mode"], "pad")
+            self.assertTrue(summary["ignore_background_labels"])
+            edge_label = tifffile.imread(
+                output_root
+                / "5_Labels_all"
+                / "top_potsdam_2_10_x0002_y0002_label.tif"
+            )
+            self.assertEqual(edge_label.shape, (2, 2, 3))
+            np.testing.assert_array_equal(edge_label[0, 0], (0, 0, 255))
+            np.testing.assert_array_equal(edge_label[1, 1], (0, 0, 0))
+
+            from sam3_remote_wsss.config import load_config
+
+            patch_config = load_config(
+                output_root / "potsdam_patches_config.json"
+            )
+            self.assertEqual(patch_config.background_colors, ())
+            ids = label_rgb_to_ids(
+                edge_label,
+                patch_config.classes,
+                patch_config.ignore_index,
+                background_colors=patch_config.background_colors,
+            )
+            np.testing.assert_array_equal(
+                ids,
+                np.asarray([[2, 255], [255, 255]], dtype=np.uint8),
+            )
+
     def test_patch_dataset_is_discoverable_and_has_per_patch_tags(self) -> None:
         with TemporaryDirectory() as temporary:
             temporary_path = Path(temporary)

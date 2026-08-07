@@ -74,6 +74,17 @@ reject`，停止类别组合搜索。它的代价是 OA 从 `0.3935` 降至 `0.3
 `0.5336` 降至 `0.4421`，论文中必须同时报告。下一步先按六张 validation 父图检查逐图增益和
 父图宏平均稳定性，通过后才扩展到完整4,352训练 patch。
 
+逐父图稳定性检查已经通过：impervious-only 的父图宏平均 mIoU 从 `0.3406 +/- 0.0450`
+提高到 `0.3544 +/- 0.0380`，六张父图中五张的 mIoU 和 mF1 同时提高。因此候选校正规则保持
+冻结，不再调参。随后重新审视公开对比协议，决定不替换 Potsdam，而是保留它作为主数据集并
+计划增加 LoveDA 泛化实验；当前先建立与主流 Potsdam WSSS 工作一致的独立256协议。
+
+代码已加入 `edge_mode=pad`、`--ignore-background-labels` 和
+`configs/potsdam_parent_split_23_0_14_paper.json`。论文对齐协议采用23张训练父图、14张官方
+评估父图、排除 `top_potsdam_7_10`、256非重叠网格及 clutter ignore。每张6000x6000父图
+生成24x24=576个固定大小 patch，边缘采用 padding；全量预期为13,248个训练 patch、8,064个
+测试 patch。下一步先在服务器生成单父图576-patch smoke 并核验配置，再生成全量数据。
+
 ## 2. 已经完成
 
 - 已实现 Potsdam 数据读取和像素标签到 image-level CSV 的转换。

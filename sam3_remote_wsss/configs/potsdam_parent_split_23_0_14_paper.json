@@ -1,0 +1,49 @@
+{
+  "name": "potsdam_paper_aligned_23_train_14_eval_exclude_7_10",
+  "description": "Paper-aligned Potsdam WSSS split: 23 official training parents, 14 evaluation parents, and top_potsdam_7_10 excluded for annotation issues. The val list is intentionally empty; the official 14 parents are kept only in test.",
+  "train": [
+    "top_potsdam_2_10",
+    "top_potsdam_2_11",
+    "top_potsdam_2_12",
+    "top_potsdam_3_10",
+    "top_potsdam_3_11",
+    "top_potsdam_3_12",
+    "top_potsdam_4_10",
+    "top_potsdam_4_11",
+    "top_potsdam_4_12",
+    "top_potsdam_5_10",
+    "top_potsdam_5_11",
+    "top_potsdam_5_12",
+    "top_potsdam_6_7",
+    "top_potsdam_6_8",
+    "top_potsdam_6_9",
+    "top_potsdam_6_10",
+    "top_potsdam_6_11",
+    "top_potsdam_6_12",
+    "top_potsdam_7_7",
+    "top_potsdam_7_8",
+    "top_potsdam_7_9",
+    "top_potsdam_7_11",
+    "top_potsdam_7_12"
+  ],
+  "val": [],
+  "test": [
+    "top_potsdam_2_13",
+    "top_potsdam_2_14",
+    "top_potsdam_3_13",
+    "top_potsdam_3_14",
+    "top_potsdam_4_13",
+    "top_potsdam_4_14",
+    "top_potsdam_4_15",
+    "top_potsdam_5_13",
+    "top_potsdam_5_14",
+    "top_potsdam_5_15",
+    "top_potsdam_6_13",
+    "top_potsdam_6_14",
+    "top_potsdam_6_15",
+    "top_potsdam_7_13"
+  ],
+  "exclude": [
+    "top_potsdam_7_10"
+  ]
+}

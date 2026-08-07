@@ -30,6 +30,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--patch-size", type=int, default=512)
     parser.add_argument("--patch-overlap", type=int, default=128)
     parser.add_argument(
+        "--edge-mode",
+        choices=("shift", "pad"),
+        default="shift",
+        help=(
+            "shift keeps full patches by moving the final window inward; pad uses "
+            "a fixed stride grid and pads right/bottom edge patches."
+        ),
+    )
+    parser.add_argument(
         "--min-class-pixels",
         type=int,
         default=16,
@@ -49,6 +58,14 @@ def parse_args() -> argparse.Namespace:
         help="Per-class threshold override. Can be repeated, for example car=4.",
     )
     parser.add_argument("--compression", choices=["none", "deflate"], default="deflate")
+    parser.add_argument(
+        "--ignore-background-labels",
+        action="store_true",
+        help=(
+            "Write an output config with background_colors empty so Potsdam "
+            "clutter/background pixels map to ignore_index during evaluation."
+        ),
+    )
     parser.add_argument(
         "--parent-split",
         default=None,
@@ -125,6 +142,8 @@ def prepare_patches(
     parent_split: str | Path | None = None,
     limit: int | None = None,
     skip_existing: bool = False,
+    edge_mode: str = "shift",
+    ignore_background_labels: bool = False,
 ) -> dict:
     config_path = Path(config_path)
     config = load_config(config_path)
@@ -136,6 +155,8 @@ def prepare_patches(
         raise ValueError("patch_size must be positive")
     if patch_overlap < 0 or patch_overlap >= patch_size:
         raise ValueError("patch_overlap must be in [0, patch_size)")
+    if edge_mode not in {"shift", "pad"}:
+        raise ValueError("edge_mode must be 'shift' or 'pad'")
     if min_class_pixels < 1:
         raise ValueError("min_class_pixels must be at least 1")
     if min_class_ratio < 0.0 or min_class_ratio > 1.0:
@@ -188,7 +209,13 @@ def prepare_patches(
             )
 
         height, width = image.shape[:2]
-        tiles = generate_tiles(width, height, patch_size, patch_overlap)
+        tiles = generate_tiles(
+            width,
+            height,
+            patch_size,
+            patch_overlap,
+            edge_mode=edge_mode,
+        )
         for tile in tiles:
             patch_id = f"{item.image_id}_x{tile.x0:04d}_y{tile.y0:04d}"
             image_name = f"{patch_id}_RGBIR.tif"
@@ -196,8 +223,8 @@ def prepare_patches(
             image_path = image_root / image_name
             label_path = label_root / label_name
 
-            image_patch = np.ascontiguousarray(crop_tile(image, tile))
-            label_patch = np.ascontiguousarray(crop_tile(label, tile))
+            image_patch = _pad_patch(crop_tile(image, tile), tile.height, tile.width)
+            label_patch = _pad_patch(crop_tile(label, tile), tile.height, tile.width)
             weak_labels = image_level_from_label(
                 label_patch,
                 config.classes,
@@ -229,6 +256,8 @@ def prepare_patches(
                 "y1": tile.y1,
                 "width": tile.width,
                 "height": tile.height,
+                "content_width": min(tile.x1, width) - tile.x0,
+                "content_height": min(tile.y1, height) - tile.y0,
             }
             for spec in config.classes:
                 class_mask = np.all(
@@ -258,6 +287,8 @@ def prepare_patches(
     raw_config["dataset_root"] = str(output_root.resolve())
     raw_config["tile_size"] = patch_size
     raw_config["tile_overlap"] = 0
+    if ignore_background_labels:
+        raw_config["background_colors"] = []
     if split_manifest is not None:
         split_copy = output_root / "parent_split.json"
         split_copy.write_text(json.dumps(split_manifest, indent=2), encoding="utf-8")
@@ -283,6 +314,8 @@ def prepare_patches(
         "patches": written_patches,
         "patch_size": patch_size,
         "patch_overlap": patch_overlap,
+        "edge_mode": edge_mode,
+        "ignore_background_labels": ignore_background_labels,
         "min_class_pixels": min_class_pixels,
         "min_class_ratio": min_class_ratio,
         "class_min_pixels": class_min_pixels or {},
@@ -304,6 +337,20 @@ def _write_tiff(path: Path, array: np.ndarray, compression: str | None) -> None:
     tifffile.imwrite(path, array, **kwargs)
 
 
+def _pad_patch(array: np.ndarray, height: int, width: int) -> np.ndarray:
+    pad_height = height - array.shape[0]
+    pad_width = width - array.shape[1]
+    if pad_height < 0 or pad_width < 0:
+        raise ValueError(
+            f"Patch shape {array.shape[:2]} exceeds target {(height, width)}"
+        )
+    if pad_height or pad_width:
+        pad_widths = [(0, pad_height), (0, pad_width)]
+        pad_widths.extend((0, 0) for _ in range(array.ndim - 2))
+        array = np.pad(array, pad_widths, mode="constant", constant_values=0)
+    return np.ascontiguousarray(array)
+
+
 def _write_csv_atomic(path: Path, fieldnames: list[str], rows: list[dict]) -> None:
     temporary = path.with_suffix(path.suffix + ".tmp")
     with temporary.open("w", encoding="utf-8", newline="") as handle:
@@ -322,10 +369,12 @@ def main() -> None:
         output_root=args.output_root,
         patch_size=args.patch_size,
         patch_overlap=args.patch_overlap,
+        edge_mode=args.edge_mode,
         min_class_pixels=args.min_class_pixels,
         min_class_ratio=args.min_class_ratio,
         class_min_pixels=thresholds,
         compression=args.compression,
+        ignore_background_labels=args.ignore_background_labels,
         parent_split=args.parent_split,
         limit=args.limit,
         skip_existing=args.skip_existing,

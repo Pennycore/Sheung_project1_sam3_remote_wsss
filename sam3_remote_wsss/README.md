@@ -865,3 +865,28 @@ The evaluator reports both overlapping patch metrics and stitched parent-tile
 metrics. It resolves overlap by preferring predictions farther from patch
 boundaries, so each original Potsdam pixel contributes exactly once to the
 final confusion matrix. Use `stitched_metrics` as the final result.
+
+## Frozen Visual-Prototype Reconciliation
+
+After calibrating robust visual prototypes on a training-only candidate subset,
+export trainable pseudo labels without reading pixel ground truth:
+
+```bash
+python -m sam3_remote_wsss.reconcile_candidate_visual_prototypes \
+  --config "$FULL_ROOT/potsdam_patches_config_manual4.json" \
+  --labels-csv data/candidate_validation_256.csv \
+  --candidate-dir runs/manual4_candidates_val256_v1/candidates \
+  --region-score-dir runs/candidate_region_remoteclip_val256_v2 \
+  --prototype-calibration \
+    runs/candidate_region_remoteclip_train256_v2/visual_prototypes.json \
+  --cam-dir "$VAL_CAM_DIR" \
+  --cam-method mean \
+  --output-dir runs/remoteclip_visual_consensus_val256_v1 \
+  --require-all
+```
+
+The frozen prototype and its NPZ data file are fingerprinted in `summary.json`.
+Candidates are relabeled only when CAM and the visual prototype predict the same
+active image-level class; all other candidates retain their SAM3 source class.
+Run `evaluate_pseudo_labels` separately to obtain mIoU, mF1, OA, foreground,
+labeled-only, and coverage metrics.

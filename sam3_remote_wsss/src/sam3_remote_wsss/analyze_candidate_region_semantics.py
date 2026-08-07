@@ -22,6 +22,7 @@ from .candidate_region_scores import (
 from .candidate_visual_prototypes import (
     load_visual_prototype_calibration,
     normalize_features,
+    validate_visual_prototype_model,
 )
 from .config import load_config
 from .evaluate_pseudo_labels import compute_evaluation_metrics
@@ -232,7 +233,7 @@ def analyze_candidate_region_semantics(
                     "Visual prototype analysis requires region_features; rerun "
                     "score_candidate_regions into a new output directory"
                 )
-            _validate_prototype_model(
+            validate_visual_prototype_model(
                 prototype_metadata,
                 score_metadata,
                 score_data["region_features"].shape[1],
@@ -390,28 +391,6 @@ def _assigned_pixel_purity(
         for record, target in records_and_targets
     )
     return correct / valid
-
-
-def _validate_prototype_model(
-    prototype_metadata: dict,
-    score_metadata: dict,
-    feature_dimension: int,
-) -> None:
-    expected = (
-        prototype_metadata.get("model_name"),
-        prototype_metadata.get("weights_source"),
-        int(prototype_metadata.get("feature_dimension", -1)),
-    )
-    current = (
-        score_metadata.get("model_name"),
-        score_metadata.get("weights_source"),
-        int(feature_dimension),
-    )
-    if current != expected:
-        raise ValueError(
-            "Region cache model does not match visual prototype calibration: "
-            f"expected={expected}, current={current}"
-        )
 
 
 def _finite_or_none(value: float) -> float | None:

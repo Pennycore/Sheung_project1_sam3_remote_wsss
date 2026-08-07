@@ -91,6 +91,28 @@ def load_visual_prototype_calibration(
     return metadata, class_ids, normalize_features(prototypes)
 
 
+def validate_visual_prototype_model(
+    prototype_metadata: dict,
+    score_metadata: dict,
+    feature_dimension: int,
+) -> None:
+    expected = (
+        prototype_metadata.get("model_name"),
+        prototype_metadata.get("weights_source"),
+        int(prototype_metadata.get("feature_dimension", -1)),
+    )
+    current = (
+        score_metadata.get("model_name"),
+        score_metadata.get("weights_source"),
+        int(feature_dimension),
+    )
+    if current != expected:
+        raise ValueError(
+            "Region cache model does not match visual prototype calibration: "
+            f"expected={expected}, current={current}"
+        )
+
+
 def _normalized_mean(features: np.ndarray) -> np.ndarray:
     mean = np.asarray(features, dtype=np.float32).mean(axis=0)
     norm = float(np.linalg.norm(mean))

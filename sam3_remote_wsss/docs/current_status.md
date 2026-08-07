@@ -245,7 +245,16 @@ C:\Users\28457\Desktop\Sheung_project1\Sheung_project1_sam3_remote_wsss
 
 Windows 仓库根目录同时包含 `sam3-main/sam3-main` 和 `sam3_remote_wsss`。路径不是模型的一部分，换机器后按 `environment_setup.md` 修改配置即可。
 
-## 7. 新任务交接文本
+## 7. 最新机制结论
+
+Train256 校准的 RemoteCLIP 鲁棒视觉原型已冻结，并在父图互斥 Validation256 上独立验证。
+SAM3 候选仅在 CAM 与视觉原型预测同一 image-level 阳性类时重标，否则保持原类别。相对
+Validation baseline，该规则将 mIoU/mF1/OA 从 `0.3494/0.4599/0.3935` 提升到
+`0.3658/0.4808/0.4147`，coverage 从 `0.5336` 略升至 `0.5368`。校准和伪标签导出均不读取
+pixel GT；GT 只用于最终离线评估。下一步先导出 Validation256 伪标签并验证与诊断指标完全一致，
+再扩展到完整训练候选集和 SegFormer student。
+
+## 8. 新任务交接文本
 
 新开 Codex 任务时可以直接发送：
 

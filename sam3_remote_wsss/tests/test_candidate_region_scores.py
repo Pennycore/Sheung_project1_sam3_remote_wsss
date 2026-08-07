@@ -7,6 +7,7 @@ from tempfile import TemporaryDirectory
 import unittest
 
 import numpy as np
+from PIL import Image
 import tifffile
 
 from sam3_remote_wsss.analyze_candidate_region_semantics import (
@@ -28,6 +29,9 @@ from sam3_remote_wsss.candidate_region_scores import (
     score_candidate_regions,
 )
 from sam3_remote_wsss.config import ClassSpec
+from sam3_remote_wsss.reconcile_candidate_visual_prototypes import (
+    reconcile_candidate_visual_prototypes,
+)
 from sam3_remote_wsss.candidate_visual_prototypes import (
     load_visual_prototype_calibration,
     robust_visual_prototype,
@@ -482,6 +486,31 @@ class CandidateRegionScoreTests(unittest.TestCase):
             self.assertAlmostEqual(
                 prototype_report["metrics"]["cam_region_consensus"]["miou"],
                 1.0,
+            )
+
+            (label_root / f"{image_id}_label.tif").unlink()
+            output_dir = root / "reconciled"
+            export_report = reconcile_candidate_visual_prototypes(
+                config_path=config_path,
+                labels_csv=labels_csv,
+                candidate_dir=candidate_dir,
+                region_score_dir=score_dir,
+                prototype_calibration=calibration,
+                cam_dir=cam_dir,
+                output_dir=output_dir,
+            )
+            exported = np.asarray(
+                Image.open(output_dir / "pseudo_labels" / f"{image_id}.png")
+            )
+            np.testing.assert_array_equal(
+                exported,
+                np.asarray([[1, 1, 2, 2]] * 4, dtype=np.uint8),
+            )
+            self.assertFalse(export_report["protocol"]["pixel_gt_used"])
+            self.assertEqual(export_report["processed_images"], 1)
+            self.assertEqual(
+                export_report["candidate_actions"],
+                {"keep": 1, "relabel": 1},
             )
 
 

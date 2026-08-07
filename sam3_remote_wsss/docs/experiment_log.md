@@ -1502,6 +1502,23 @@ source 与 CAM top1 一致的候选作为弱种子，逐类迭代去除距离视
 其余 Keep。校准不读取 pixel GT，并有“数据集目录完全不存在仍可校准”的测试；全套 `54/54` 通过。
 该方法尚无服务器结果，不宣称优于 V2-a。
 
+Train256 与父图互斥 Validation256 的弱视觉原型 V2-b2 已完成。两者均使用 Train256 上冻结的
+RemoteCLIP 鲁棒视觉原型，Validation 阶段没有重新校准。Train256 baseline 与 CAM+Visual 的
+mIoU/mF1/OA 分别为 `0.3800/0.4912/0.4713` 与 `0.4005/0.5148/0.4908`；foreground
+mIoU/mF1 从 `0.4560/0.5895` 提升至 `0.4806/0.6177`，coverage 基本不变
+（`0.6063 -> 0.6065`）。
+
+独立 Validation256 上，baseline 与 CAM+Visual 的 mIoU/mF1/OA 分别为
+`0.3494/0.4599/0.3935` 与 `0.3658/0.4808/0.4147`，绝对提升
+`+0.0164/+0.0210/+0.0211`；foreground mIoU/mF1 提升 `+0.0197/+0.0252`，coverage
+从 `0.5336` 略升到 `0.5368`。107次重标的 beneficial/destructive/unresolved 比例为
+`0.5607/0.3738/0.0654`。其中 impervious->low vegetation 和 low vegetation->tree 最稳定；
+building->impervious、car->impervious、low vegetation->impervious 仍为主要破坏来源。
+由于 mIoU、mF1、OA 在独立父图上同时提升且 coverage 未下降，V2-b2 通过机制独立验证。
+
+新增 `reconcile_candidate_visual_prototypes`，把已验证的 CAM+Visual 共识规则导出为可训练 PNG
+伪标签。导出过程不读取 pixel GT，并记录冻结 JSON/NPZ 原型指纹；评估仍由独立命令完成。
+
 ## 后续实验记录模板
 
 ```text

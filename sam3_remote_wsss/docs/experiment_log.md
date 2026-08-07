@@ -1385,6 +1385,18 @@ low-vegetation-only 相对 baseline 的 mIoU/mF1/foreground mIoU 分别下降
 `configs/potsdam_parent_split_23_0_14_paper.json`。下一步先生成单父图576-patch smoke，核验
 数量、固定尺寸、split 和 ignore 映射，再生成全量论文协议数据。
 
+随后接入研究交接文档中的 Candidate Recoverability 上限诊断。新工具固定比较三种候选融合：
+Baseline 保持 SAM3 source class；Oracle Reject 只保留 source class 等于 dominant GT 的候选；
+Oracle Relabel 保持候选几何和 SAM score 不变，仅在 dominant foreground GT 同时属于该 patch
+image-level 正类时修改类别，背景主导与非正类目标仍拒绝。三种策略统一报告 mIoU、mF1、OA、
+前景指标、labeled 指标和 coverage，并自动给出 Relabel-Reject 等差值。
+
+同一诊断还统计任意候选覆盖的 Geometric Recall、同 source class 候选覆盖的 Semantic Recall
+及二者之差 Recoverable Semantic Gap；SAM-to-GT confusion 同时提供 candidate-count dominant
+vote 和 candidate-mask pixel-area 两种加权。若提供 CAM 缓存，则按每个 source-to-dominant
+foreground confusion pair 报告 mean/top20 CAM 的纠正率、像素加权纠正率和 top1 margin 分布。
+GT 明确标记为 offline oracle diagnostic only，不生成或覆盖任何训练 artifact。
+
 指标报告规范同步更新：后续所有完整像素预测必须至少报告六类 `mIoU`、六类宏平均 `mF1`
 和 `OA`，并附逐类 IoU/F1 及前景宏平均。已有 `pixel_accuracy` 与 `OA` 数值相同，继续保留用于
 兼容历史 JSON。带 `255` 的伪标签同时报告 strict 和 labeled-only 指标及 coverage；候选级

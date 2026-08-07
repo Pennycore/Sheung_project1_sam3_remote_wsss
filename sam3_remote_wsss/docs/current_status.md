@@ -85,6 +85,14 @@ reject`，停止类别组合搜索。它的代价是 OA 从 `0.3935` 降至 `0.3
 生成24x24=576个固定大小 patch，边缘采用 padding；全量预期为13,248个训练 patch、8,064个
 测试 patch。下一步先在服务器生成单父图576-patch smoke 并核验配置，再生成全量数据。
 
+论文交接文档的候选修复主线已经接入。新增
+`analyze_candidate_recoverability` 离线诊断工具，在现有 Train256 候选缓存上比较原始融合、
+Oracle Reject 和受 image-level 正类约束的 Oracle Relabel；同时计算 Geometric Recall、
+Semantic Recall、Recoverable Semantic Gap、两种 SAM-to-GT confusion 以及各前景错配对的 CAM
+纠正率和 margin 分布。该工具只读取 GT 做上限诊断，不写训练伪标签，也不据此直接设正式阈值。
+当前下一步是在服务器现有2,493个候选上运行该诊断，判断“保留几何并修正语义”是否具有足够
+上限，再决定 Candidate Reconciliation V1 的实现。
+
 ## 2. 已经完成
 
 - 已实现 Potsdam 数据读取和像素标签到 image-level CSV 的转换。

@@ -225,6 +225,14 @@ python -m sam3_remote_wsss.analyze_candidate_cam \
   --cam-dir runs/cam_resnet50_full_repaired/cams_train \
   --output runs/manual4_candidates_256_v1/candidate_cam_quality.json \
   --require-all
+
+python -m sam3_remote_wsss.analyze_candidate_recoverability \
+  --config "$FULL_ROOT/potsdam_patches_config_manual4.json" \
+  --labels-csv data/prompt_ablation_256.csv \
+  --candidate-dir runs/manual4_candidates_256_v2/candidates \
+  --cam-dir runs/cam_resnet50_full_repaired/cams_train \
+  --output runs/manual4_candidates_256_v2/candidate_recoverability.json \
+  --require-all
 ```
 
 Candidate caching is opt-in and does not alter the normal fusion policy. Each
@@ -243,6 +251,14 @@ with the existing CAM maps and reports whether CAM agreement can reject
 semantically incorrect SAM3 candidates. It includes both all candidates and a
 separate multi-positive-patch result, since a single-positive patch has no
 meaningful foreground-class alternative. No pseudo label is rewritten.
+
+`analyze_candidate_recoverability` tests the candidate-relabeling hypothesis
+without changing any training artifact. It reports baseline, Oracle Reject,
+and image-label-constrained Oracle Relabel pseudo-label metrics; geometric and
+semantic recall; their recoverable semantic gap; candidate-count and
+pixel-area-weighted SAM-to-GT confusion; and CAM correction rates for each
+foreground confusion pair. Pixel GT is diagnostic-only and is never exported
+as a pseudo label or used to calibrate a production threshold.
 
 After freezing a reject-only policy, pseudo labels can be rebuilt without
 running SAM3 again:

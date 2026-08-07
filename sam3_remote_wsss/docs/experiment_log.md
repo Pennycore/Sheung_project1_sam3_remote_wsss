@@ -1526,6 +1526,15 @@ impervious/building/low vegetation/tree/car=`0.5637/0.5620/0.3418/0.1455/0.7531`
 因此 background IoU=0。新增 `merge_background_seeds`：只从既有主模型监督中复制 class-0 种子，
 丢弃其中全部旧前景；与校正前景冲突时前景优先。该合并器不读取 GT，并有独立回归测试。
 
+完整4352张训练 patch 的“RemoteCLIP 视觉共识校正前景 + 既有主方案背景种子”已经合并并评估。
+mIoU/mF1/OA=`0.4204/0.5557/0.5070`，foreground mIoU/mF1=`0.4732/0.6127`；
+labeled mIoU/mF1/OA=`0.6018/0.7321/0.8110`，coverage=`0.6251`。逐类 IoU 为
+background/impervious/building/low vegetation/tree/car=
+`0.1565/0.5637/0.5620/0.3418/0.1455/0.7531`。背景合并没有改变任何前景类别 IoU，
+并将整体 mIoU 从无背景版本的 `0.3944` 提高到 `0.4204`。该结果通过伪标签质量门槛，下一步采用与
+原主模型完全相同的 SegFormer 训练配置，只替换训练伪标签目录，先运行 seed 42，再进行独立
+validation/test 评估；只有 student 指标通过后才扩展 seed 43/44。
+
 ## 后续实验记录模板
 
 ```text

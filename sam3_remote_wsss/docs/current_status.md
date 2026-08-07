@@ -252,7 +252,11 @@ SAM3 候选仅在 CAM 与视觉原型预测同一 image-level 阳性类时重标
 Validation baseline，该规则将 mIoU/mF1/OA 从 `0.3494/0.4599/0.3935` 提升到
 `0.3658/0.4808/0.4147`，coverage 从 `0.5336` 略升至 `0.5368`。校准和伪标签导出均不读取
 pixel GT；GT 只用于最终离线评估。下一步先导出 Validation256 伪标签并验证与诊断指标完全一致，
-再扩展到完整训练候选集和 SegFormer student。
+完整4352训练 patch 的校正前景已导出，并与既有背景种子合并。最终训练监督的
+mIoU/mF1/OA=`0.4204/0.5557/0.5070`，foreground mIoU/mF1=`0.4732/0.6127`，
+coverage=`0.6251`，background IoU=`0.1565`，skipped=0。下一步冻结该监督，使用与原主模型
+相同的 SegFormer 配置训练 seed 42，并在独立 validation/test 上与原主模型比较；通过后再补
+seed 43/44。
 
 ## 8. 新任务交接文本
 
@@ -263,8 +267,9 @@ pixel GT；GT 只用于最终离线评估。下一步先导出 Validation256 伪
 docs/experiment_log.md 和 docs/runbook.md，再继续开发。
 
 当前目标是 SAM3 + RemoteCLIP 风格 prompt 的 Potsdam image-level WSSS。
-真实 SAM3 伪标签和 SegFormer-style student smoke test 已跑通。
-patch-level 数据准备和 background 映射已经实现但尚未在服务器重跑。
-下一步先生成 patch smoke 数据集和新基线，再补齐 student 验证与 mIoU 评估闭环。
+完整4352训练 patch 的 RemoteCLIP 视觉共识前景校正和背景种子合并已经完成。
+当前冻结监督位于服务器 `runs/remoteclip_visual_consensus_background_full_train_v1/pseudo_labels`，
+伪标签 mIoU/mF1/OA 为 `0.4204/0.5557/0.5070`。下一步使用与原主模型完全相同的 SegFormer
+配置训练 seed 42，并完成独立 validation/test 评估；暂不继续调整伪标签规则。
 请以工程中的现有实现和文档记录为准，不要重新从零设计。
 ```

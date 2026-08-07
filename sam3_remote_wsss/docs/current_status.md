@@ -27,12 +27,15 @@
 `0.4560`，优于Prompt1 `0.2427`、B2C4 `0.2763`、CLIP-Top4 `0.3609` 和
 RemoteCLIP-Top4 `0.2788`。
 
-当前下一阶段是伪标签语义校正，不再继续搜索分割头和背景损失权重。代码已新增
-`generate_pseudo_labels --save-candidates` 和 `summarize_candidates`，用于缓存并汇总
-逐提示词、逐实例SAM3候选掩码。固定256-patch缓存已完成，共2,493个候选，且重建
-伪标签与Manual4基线完全一致。代码新增 `analyze_candidate_quality`，下一步在服务器
-运行只读GT诊断，统计mask purity、提示词一致性和语义混淆，再决定是否进入
-masked-region分类。旧章节中的早期“尚未完成”描述保留作历史记录，本节为最新状态。
+当前下一阶段是伪标签语义校正，不再继续搜索分割头和背景损失权重。固定256-patch缓存
+已完成，共2,493个候选，且重建伪标签与Manual4基线完全一致。只读
+`analyze_candidate_quality` 已在服务器完成：候选像素加权纯度为 `0.7796`，主导类别
+一致率为 `0.8556`；背景污染仅 `0.0175`，其他前景污染为 `0.2029`。主要错误是
+impervious surface 与 building/low vegetation、low vegetation 与 tree、car 与 tree 之间的
+语义混淆。统一 `support>=2` 会把总体 recall 从 `0.5289` 降到 `0.2432`，因此不采用硬提示
+一致性门槛。代码现新增只读 `analyze_candidate_cam`，下一步使用已生成的正式 CAM 文件离线
+复核候选语义，不重新运行 SAM3，也不立即训练新 student。旧章节中的早期“尚未完成”描述
+保留作历史记录，本节为最新状态。
 
 ## 2. 已经完成
 

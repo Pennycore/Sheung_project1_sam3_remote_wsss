@@ -193,6 +193,14 @@ python -m sam3_remote_wsss.analyze_candidate_quality \
   --candidate-dir runs/manual4_candidates_256_v1/candidates \
   --output runs/manual4_candidates_256_v1/candidate_quality.json \
   --require-all
+
+python -m sam3_remote_wsss.analyze_candidate_cam \
+  --config "$FULL_ROOT/potsdam_patches_config_manual4.json" \
+  --labels-csv data/prompt_ablation_256.csv \
+  --candidate-dir runs/manual4_candidates_256_v1/candidates \
+  --cam-dir runs/cam_resnet50_full_repaired/cams_train \
+  --output runs/manual4_candidates_256_v1/candidate_cam_quality.json \
+  --require-all
 ```
 
 Candidate caching is opt-in and does not alter the normal fusion policy. Each
@@ -205,6 +213,12 @@ and both candidate-cache files exist.
 to report candidate purity, prompted-class versus dominant-GT confusion, and
 pixel precision/recall/IoU at each distinct-prompt support threshold. GT is not
 used to generate candidates, change pseudo labels, or train the student.
+
+`analyze_candidate_cam` is also diagnostic-only. It scores every cached mask
+with the existing CAM maps and reports whether CAM agreement can reject
+semantically incorrect SAM3 candidates. It includes both all candidates and a
+separate multi-positive-patch result, since a single-positive patch has no
+meaningful foreground-class alternative. No pseudo label is rewritten.
 
 Important config fields:
 

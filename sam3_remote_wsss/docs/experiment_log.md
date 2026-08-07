@@ -1448,6 +1448,16 @@ source-target 对执行 Relabel，所有低置信或非 allowlist 分歧回退 K
 CLI 接收 allowlist，不硬编码类别；该设置用于验证 semantic correction 价值，最终通用方法仍需
 独立区域语义证据，不能将 validation 派生类别先验作为主要贡献。
 
+V2-a 在 Validation256 完成离线重建：2,540候选中2,464 Keep、76 Relabel、0 Ignore。
+最终 mIoU=`0.3796`、mF1=`0.4935`、OA=`0.4317`、foreground mIoU=`0.4555`、
+foreground mF1=`0.5922`、labeled mIoU=`0.5484`、coverage=`0.5376`。baseline 对应
+`0.3494/0.4599/0.3935/0.4193/0.5518/0.4961/0.5336`，因此 V2-a 在完整、前景、
+labeled-only 与 coverage 指标上均改进。impervious-only reject 为
+`0.3629/0.4733/0.3795/0.4355/0.5679/coverage 0.4421`，V2-a 同样形成全面优势。
+逐类 IoU 为 background `0`、impervious `0.5322`、building `0.5758`、low vegetation
+`0.3148`、tree `0.1148`、car `0.7400`。该实验确立“低置信分歧Keep、少量可靠分歧Relabel”
+优于“分歧Ignore”的机制结论；仍需逐父图检查，并用独立区域分类证据替代手工 allowlist。
+
 指标报告规范同步更新：后续所有完整像素预测必须至少报告六类 `mIoU`、六类宏平均 `mF1`
 和 `OA`，并附逐类 IoU/F1 及前景宏平均。已有 `pixel_accuracy` 与 `OA` 数值相同，继续保留用于
 兼容历史 JSON。带 `255` 的伪标签同时报告 strict 和 labeled-only 指标及 coverage；候选级

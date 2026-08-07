@@ -131,6 +131,15 @@ Validation256 仍达到 `0.4328 mIoU/0.5471 mF1/0.4710 OA`，比 baseline 高约
 仅重标这三个方向，其他分歧保留 SAM3 source，不产生候选级 Ignore；它用于验证可靠语义修复
 能否带来收益，类别 allowlist 仍视为数据集特定消融，不能作为最终通用贡献。
 
+V2-a Validation256 已通过：2,540个候选中 Keep/Relabel=`2464/76`，无候选级 Ignore。
+mIoU/mF1/OA/foreground mIoU/foreground mF1/coverage 为
+`0.3796/0.4935/0.4317/0.4555/0.5922/0.5376`。相对 baseline 分别提高约
+`+0.0302/+0.0336/+0.0382/+0.0362/+0.0404/+0.0040`；相对 impervious-only reject 的
+mIoU/mF1/OA 提高约 `+0.0167/+0.0202/+0.0522`，同时恢复约 `+0.0955` coverage。
+这证明 Keep-by-default 的选择性语义修复能够兑现一部分 Oracle 上限。下一步先检查六张
+validation 父图是否普遍受益；通过后将 V2-a 固定为机制消融，并开发不依赖人工类别 allowlist
+的 CAM + 独立区域语义证据一致性 V2-b。
+
 ## 2. 已经完成
 
 - 已实现 Potsdam 数据读取和像素标签到 image-level CSV 的转换。

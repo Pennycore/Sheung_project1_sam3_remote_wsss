@@ -890,3 +890,20 @@ Candidates are relabeled only when CAM and the visual prototype predict the same
 active image-level class; all other candidates retain their SAM3 source class.
 Run `evaluate_pseudo_labels` separately to obtain mIoU, mF1, OA, foreground,
 labeled-only, and coverage metrics.
+
+To preserve an existing background-only branch while replacing all old
+foreground semantics, merge only class-0 seeds from the previous pseudo labels:
+
+```bash
+python -m sam3_remote_wsss.merge_background_seeds \
+  --config "$FULL_ROOT/potsdam_patches_config_manual4.json" \
+  --labels-csv "$FULL_ROOT/image_level_labels_train.csv" \
+  --foreground-pseudo-label-dir \
+    runs/remoteclip_visual_consensus_full_train_v1/pseudo_labels \
+  --background-seed-label-dir "$BACKGROUND_SEED_DIR" \
+  --output-dir runs/remoteclip_visual_consensus_background_full_train_v1 \
+  --require-all
+```
+
+Corrected foreground always wins a conflict. Only class 0 is copied from the
+background source; its old foreground classes are explicitly discarded.

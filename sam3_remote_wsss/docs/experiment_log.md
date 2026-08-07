@@ -1519,6 +1519,13 @@ building->impervious、car->impervious、low vegetation->impervious 仍为主要
 新增 `reconcile_candidate_visual_prototypes`，把已验证的 CAM+Visual 共识规则导出为可训练 PNG
 伪标签。导出过程不读取 pixel GT，并记录冻结 JSON/NPZ 原型指纹；评估仍由独立命令完成。
 
+完整4352张训练 patch 的 RemoteCLIP 共识前景伪标签已生成并完整评估。mIoU/mF1/OA 为
+`0.3944/0.5105/0.4994`，foreground mIoU/mF1 为 `0.4732/0.6127`，labeled
+mIoU/mF1/OA 为 `0.5493/0.6519/0.8102`，coverage=`0.6165`，skipped=0。逐类 IoU 为
+impervious/building/low vegetation/tree/car=`0.5637/0.5620/0.3418/0.1455/0.7531`；背景尚未合并，
+因此 background IoU=0。新增 `merge_background_seeds`：只从既有主模型监督中复制 class-0 种子，
+丢弃其中全部旧前景；与校正前景冲突时前景优先。该合并器不读取 GT，并有独立回归测试。
+
 ## 后续实验记录模板
 
 ```text

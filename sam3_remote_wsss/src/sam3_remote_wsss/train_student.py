@@ -372,6 +372,8 @@ def main() -> None:
             val_message = (
                 f" val_loss={val_metrics['loss']:.4f} "
                 f"val_miou={_format_metric(val_metrics['miou'])} "
+                f"val_mf1={_format_metric(val_metrics['mf1'])} "
+                f"val_oa={_format_metric(val_metrics['oa'])} "
                 "val_fg_miou="
                 f"{_format_metric(val_metrics['foreground_miou'])}"
             )
@@ -453,29 +455,48 @@ def segmentation_metrics(
     class_names: tuple[str, ...],
 ) -> dict[str, object]:
     class_iou: dict[str, float | None] = {}
+    class_f1: dict[str, float | None] = {}
     valid_ious = []
     foreground_ious = []
+    valid_f1s = []
+    foreground_f1s = []
     for class_id, name in enumerate(class_names):
         true_positive = int(confusion[class_id, class_id])
         false_positive = int(confusion[:, class_id].sum()) - true_positive
         false_negative = int(confusion[class_id, :].sum()) - true_positive
         denominator = true_positive + false_positive + false_negative
         iou = None if denominator == 0 else true_positive / denominator
+        f1_denominator = 2 * true_positive + false_positive + false_negative
+        f1 = (
+            None
+            if f1_denominator == 0
+            else 2 * true_positive / f1_denominator
+        )
         class_iou[name] = iou
+        class_f1[name] = f1
         if iou is not None:
             valid_ious.append(iou)
             if class_id != 0:
                 foreground_ious.append(iou)
+        if f1 is not None:
+            valid_f1s.append(f1)
+            if class_id != 0:
+                foreground_f1s.append(f1)
     total = int(confusion.sum())
+    oa = None if total == 0 else float(np.trace(confusion) / total)
     return {
         "class_iou": class_iou,
         "miou": None if not valid_ious else float(np.mean(valid_ious)),
         "foreground_miou": (
             None if not foreground_ious else float(np.mean(foreground_ious))
         ),
-        "pixel_accuracy": (
-            None if total == 0 else float(np.trace(confusion) / total)
+        "class_f1": class_f1,
+        "mf1": None if not valid_f1s else float(np.mean(valid_f1s)),
+        "foreground_mf1": (
+            None if not foreground_f1s else float(np.mean(foreground_f1s))
         ),
+        "oa": oa,
+        "pixel_accuracy": oa,
         "confusion": confusion.tolist(),
         "valid_pixels": total,
     }

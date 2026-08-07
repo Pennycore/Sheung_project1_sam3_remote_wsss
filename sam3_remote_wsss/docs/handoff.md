@@ -558,6 +558,7 @@ CUDA_VISIBLE_DEVICES=0,1 python -m sam3_remote_wsss.train_student \
 - 已在单父图 256 patch 上扫描背景和前景阈值，正式数据仍需复核。
 - Prompt1、Manual4、真实 B2C4、四个单提示 Slot、OpenAI CLIP-Top4 与 RemoteCLIP-Top4 的固定256-patch伪标签消融均已完成。下一步只做 metadata 提示选择频率诊断，不再按训练GT调候选池或 Top-K。
 - 2026-08-07 逐提示词、逐实例SAM3候选缓存已在固定256-patch完成，共2,493个候选；重建伪标签的 mIoU/foreground mIoU/labeled foreground mIoU/coverage 为 `0.3800/0.4560/0.6173/0.6063`，与Manual4历史基线完全一致。只读候选质量报告已完成：像素加权纯度 `0.7796`、主导类别一致率 `0.8556`、背景污染 `0.0175`、其他前景污染 `0.2029`。SAM score 与纯度相关仅 `0.1772`；统一 `support>=2` 虽提高精度但使 recall 从 `0.5289` 降至 `0.2432`，不采用硬一致性过滤。新增只读 `analyze_candidate_cam`，下一步用 `runs/cam_resnet50_full_repaired/cams_train` 离线评估 CAM 区域复核；36项本地测试通过，暂不训练新student。
+- 像素级评估协议已统一补充 `mF1` 和 `OA`：伪标签、student validation、patch test 与 stitched test 均报告 `mIoU/mF1/OA`、前景宏平均及逐类 IoU/F1；`pixel_accuracy` 保留为 `OA` 的兼容别名。带 ignore 的伪标签同时报告 strict、labeled-only 和 coverage。候选实例诊断仍使用 purity/precision/recall，只有重建完整伪标签后才计算 mF1/OA/mIoU。
 - 尚未统计两张 2080Ti 上完整实验的运行时间和显存。
 
 ## 14. 交接给新 Codex 任务的文本

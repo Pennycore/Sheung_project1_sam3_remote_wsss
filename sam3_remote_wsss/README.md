@@ -266,12 +266,13 @@ Pseudo-label IDs:
 255 ignore
 ```
 
-Pseudo-label evaluation reports two complementary protocols. `miou` and
-`foreground_miou` are strict: uncovered pixels count as missed ground-truth
-pixels. `labeled_miou` and `labeled_foreground_miou` measure correctness only
-where the pseudo label did not abstain. Always report `labeled_coverage`
-alongside the labeled metrics to prevent low-coverage pseudo labels from
-appearing artificially strong.
+Pseudo-label evaluation reports two complementary protocols. `miou`, `mf1`,
+`oa`, `foreground_miou`, and `foreground_mf1` are strict: uncovered pixels
+count as missed ground-truth pixels. The corresponding `labeled_*` metrics
+measure correctness only where the pseudo label did not abstain. Always report
+`labeled_coverage` alongside the labeled metrics to prevent low-coverage
+pseudo labels from appearing artificially strong. `pixel_accuracy` is retained
+as a backward-compatible alias of `oa`.
 
 PromptBG can be enabled with a separate conservative threshold:
 

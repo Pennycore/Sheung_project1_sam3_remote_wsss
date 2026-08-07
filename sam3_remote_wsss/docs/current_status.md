@@ -37,6 +37,12 @@ impervious surface 与 building/low vegetation、low vegetation 与 tree、car �
 复核候选语义，不重新运行 SAM3，也不立即训练新 student。旧章节中的早期“尚未完成”描述
 保留作历史记录，本节为最新状态。
 
+从本次更新开始，所有像素级伪标签、student validation、patch test 和 stitched test 统一至少
+报告六类宏平均 `mIoU`、六类宏平均 `mF1` 与总体像素准确率 `OA`，并继续报告逐类 IoU/F1、
+`foreground_mIoU`、`foreground_mF1`。伪标签另分 strict 与 labeled-only 两套指标并同时报告
+coverage；`pixel_accuracy` 仅作为 `OA` 的兼容别名保留。候选实例诊断不是完整语义图，因此仍
+使用 purity、precision、recall、拒绝率等候选级指标，生成最终伪标签后再计算 mF1/OA/mIoU。
+
 ## 2. 已经完成
 
 - 已实现 Potsdam 数据读取和像素标签到 image-level CSV 的转换。

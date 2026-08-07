@@ -114,8 +114,11 @@ def compute_iou(
     gt_pixel_count: np.ndarray | None = None,
 ) -> dict:
     class_iou = {}
+    class_f1 = {}
     valid_ious = []
     foreground_ious = []
+    valid_f1s = []
+    foreground_f1s = []
     id_to_name = {0: "background", **{spec.id: spec.name for spec in config.classes}}
     for class_id, name in id_to_name.items():
         tp = float(confusion[class_id, class_id])
@@ -126,15 +129,39 @@ def compute_iou(
             fn = float(gt_pixel_count[class_id] - confusion[class_id, class_id])
         denom = tp + fp + fn
         iou = None if denom == 0 else tp / denom
+        f1_denom = 2.0 * tp + fp + fn
+        f1 = None if f1_denom == 0 else 2.0 * tp / f1_denom
         class_iou[name] = iou
+        class_f1[name] = f1
         if iou is not None:
             valid_ious.append(iou)
             if class_id != 0:
                 foreground_ious.append(iou)
+        if f1 is not None:
+            valid_f1s.append(f1)
+            if class_id != 0:
+                foreground_f1s.append(f1)
+    evaluated_pixels = (
+        int(confusion.sum())
+        if gt_pixel_count is None
+        else int(gt_pixel_count.sum())
+    )
+    oa = (
+        None
+        if evaluated_pixels == 0
+        else float(np.trace(confusion) / evaluated_pixels)
+    )
     return {
         "class_iou": class_iou,
         "miou": None if not valid_ious else float(np.mean(valid_ious)),
         "foreground_miou": None if not foreground_ious else float(np.mean(foreground_ious)),
+        "class_f1": class_f1,
+        "mf1": None if not valid_f1s else float(np.mean(valid_f1s)),
+        "foreground_mf1": (
+            None if not foreground_f1s else float(np.mean(foreground_f1s))
+        ),
+        "oa": oa,
+        "pixel_accuracy": oa,
     }
 
 
@@ -162,6 +189,11 @@ def compute_evaluation_metrics(
         "labeled_class_iou": labeled["class_iou"],
         "labeled_miou": labeled["miou"],
         "labeled_foreground_miou": labeled["foreground_miou"],
+        "labeled_class_f1": labeled["class_f1"],
+        "labeled_mf1": labeled["mf1"],
+        "labeled_foreground_mf1": labeled["foreground_mf1"],
+        "labeled_oa": labeled["oa"],
+        "labeled_pixel_accuracy": labeled["pixel_accuracy"],
         "labeled_coverage": None if total_gt == 0 else total_labeled / total_gt,
         "per_class_labeled_coverage": per_class_coverage,
         "valid_gt_pixels": total_gt,

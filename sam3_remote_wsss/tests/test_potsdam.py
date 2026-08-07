@@ -458,6 +458,11 @@ class PseudoLabelPolicyTests(unittest.TestCase):
 
         self.assertEqual(metrics["class_iou"]["foreground"], 1 / 3)
         self.assertEqual(metrics["labeled_class_iou"]["foreground"], 1.0)
+        self.assertAlmostEqual(metrics["mf1"], 0.75)
+        self.assertAlmostEqual(metrics["foreground_mf1"], 0.5)
+        self.assertAlmostEqual(metrics["oa"], 0.5)
+        self.assertAlmostEqual(metrics["labeled_mf1"], 1.0)
+        self.assertAlmostEqual(metrics["labeled_oa"], 1.0)
         self.assertEqual(metrics["labeled_coverage"], 0.5)
         self.assertEqual(metrics["per_class_labeled_coverage"]["foreground"], 1 / 3)
 
@@ -713,6 +718,11 @@ class StudentValidationTests(unittest.TestCase):
         self.assertAlmostEqual(metrics["class_iou"]["foreground"], 1 / 2)
         self.assertAlmostEqual(metrics["miou"], 7 / 12)
         self.assertAlmostEqual(metrics["foreground_miou"], 1 / 2)
+        self.assertAlmostEqual(metrics["class_f1"]["background"], 4 / 5)
+        self.assertAlmostEqual(metrics["class_f1"]["foreground"], 2 / 3)
+        self.assertAlmostEqual(metrics["mf1"], 11 / 15)
+        self.assertAlmostEqual(metrics["foreground_mf1"], 2 / 3)
+        self.assertAlmostEqual(metrics["oa"], 3 / 4)
         self.assertAlmostEqual(metrics["pixel_accuracy"], 3 / 4)
 
     def test_student_validation_rejects_shared_parent_tiles(self) -> None:

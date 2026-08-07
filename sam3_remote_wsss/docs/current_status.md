@@ -147,6 +147,17 @@ validation 父图是否普遍受益；通过后将 V2-a 固定为机制消融，
 实现候选区域 CLIP/RemoteCLIP 语义缓存，并先比较区域模型单独及其与 CAM 一致时的候选纠正率，
 再决定无人工类别对的 V2-b 规则。
 
+V2-b 的第一阶段代码已经完成。`score_candidate_regions` 对每个冻结 SAM3 候选生成上下文裁剪和
+掩码强调裁剪，使用 Manual4 四提示词的逐类平均文本原型计算 CLIP/RemoteCLIP 完整类别分数，并按
+候选顺序保存 top1、margin、裁剪框和 mask fraction。缓存绑定原候选文件 SHA-256，候选发生变化时
+拒绝继续分析；该阶段只读取 image-level 标签，不读取 pixel GT。
+
+`analyze_candidate_region_semantics` 统一比较 baseline、region-only relabel 和 CAM-region consensus。
+通用 consensus 不包含人工 source-target allowlist：只有 CAM 与独立区域模型预测同一个 image-level
+阳性类别时才 Relabel，否则 Keep。诊断阶段才读取 GT，并同时报告候选级有益/破坏性重标率以及完整
+伪标签 mIoU、mF1、OA、foreground、labeled-only 和 coverage。下一步在服务器上分别用本地 OpenAI
+CLIP 与 RemoteCLIP 权重完成 Train256/Validation256 分数缓存，先比较独立语义证据，再冻结 V2-b。
+
 ## 2. 已经完成
 
 - 已实现 Potsdam 数据读取和像素标签到 image-level CSV 的转换。

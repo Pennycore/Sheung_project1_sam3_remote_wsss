@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Sequence
 
 import numpy as np
 from PIL import Image
@@ -80,6 +81,40 @@ class RemoteCLIPPromptSelector:
             image_features = image_features / image_features.norm(dim=-1, keepdim=True)
             scores = (image_features @ text_features.T).squeeze(0)
         return scores.detach().float().cpu().numpy()
+
+    def encode_images(
+        self,
+        images_rgb: Sequence[np.ndarray],
+        batch_size: int = 32,
+    ) -> np.ndarray:
+        """Encode RGB arrays as L2-normalized CLIP image features."""
+        if batch_size <= 0:
+            raise ValueError("batch_size must be positive")
+        if not images_rgb:
+            return np.empty((0, 0), dtype=np.float32)
+
+        torch = self.torch
+        features = []
+        for start in range(0, len(images_rgb), batch_size):
+            batch_arrays = images_rgb[start : start + batch_size]
+            batch = torch.stack(
+                [
+                    self.preprocess(Image.fromarray(image, mode="RGB"))
+                    for image in batch_arrays
+                ]
+            ).to(self.config.device)
+            with torch.no_grad():
+                encoded = self.model.encode_image(batch)
+                encoded = encoded / encoded.norm(dim=-1, keepdim=True)
+            features.append(encoded.detach().float().cpu().numpy())
+        return np.concatenate(features, axis=0)
+
+    def encode_texts(self, prompts: Sequence[str]) -> np.ndarray:
+        """Encode prompts as L2-normalized CLIP text features."""
+        if not prompts:
+            return np.empty((0, 0), dtype=np.float32)
+        features = self._encode_text(list(prompts))
+        return features.detach().float().cpu().numpy()
 
     def _encode_text(self, prompts: list[str]):
         key = tuple(prompts)

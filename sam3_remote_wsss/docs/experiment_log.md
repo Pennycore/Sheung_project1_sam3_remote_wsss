@@ -1473,6 +1473,18 @@ V2-a 逐父图稳定性通过：六张 validation 父图的 mIoU/mF1/OA 全部�
 兼容历史 JSON。带 `255` 的伪标签同时报告 strict 和 labeled-only 指标及 coverage；候选级
 purity 报告不能替代最终伪标签的 mF1/OA/mIoU。
 
+V2-b 区域语义阶段开始实现。新增候选双视图：包含周围上下文的自适应裁剪，以及候选外像素保留
+`0.25` 亮度的掩码强调视图；两者的归一化 CLIP 特征平均后再次归一化。文本侧不再对整幅 patch
+选择 prompt，而是将每类 Manual4 的四条 prompt 特征平均为固定类别原型。每张图保存全部五类余弦
+分数，但 top1 只允许从该 patch 的 image-level 阳性类中选择。分数缓存记录候选文件 SHA-256，确保
+候选索引严格一致；该流程不接触 GT。
+
+新增离线 CAM-region 一致性诊断。对照策略包括保持 SAM3 source、区域模型直接重标、以及 CAM 和
+区域模型 top1 一致时才重标的通用门控；其余候选默认 Keep，不再因低置信分歧丢失覆盖。该诊断会在
+候选级报告 beneficial/destructive/unresolved relabel 和逐 source-target pair 纯度，并融合为完整伪标签
+报告 mIoU、mF1、OA、foreground、labeled-only 与 coverage。代码回归测试为 `52/52` 通过；尚未在
+服务器权重上产生结果，因此当前没有宣称 V2-b 优于 V2-a。
+
 ## 后续实验记录模板
 
 ```text

@@ -349,6 +349,52 @@ plus ignore-fallback behavior. A dataset-specific allowlist is an ablation for
 testing the value of semantic correction, not a general replacement for an
 independent region-semantic model.
 
+V2-b adds an independent region-semantic cache without changing the existing
+pseudo labels. Each SAM3 candidate is encoded twice: once as a square context
+crop and once with pixels outside the candidate mask dimmed. The normalized
+features are averaged and compared with one Manual4 text prototype per class.
+Each prototype is the normalized mean of that class's four prompt embeddings.
+
+Score the frozen Train256 candidates with a local OpenAI CLIP checkpoint:
+
+```bash
+python -m sam3_remote_wsss.score_candidate_regions \
+  --config "$FULL_ROOT/potsdam_patches_config_manual4.json" \
+  --labels-csv data/prompt_ablation_256.csv \
+  --candidate-dir runs/manual4_candidates_256_v2/candidates \
+  --checkpoint-path \
+    /home/undergr/Sheungzhen_project_1/checkpoints/open_clip_pytorch_model.bin \
+  --output-dir runs/candidate_region_clip_train256 \
+  --batch-size 32 \
+  --skip-existing \
+  --require-all
+```
+
+Use `RemoteCLIP-ViT-B-32.pt` and a different output directory for the matched
+RemoteCLIP run. Region-score files are aligned to candidate indices and store
+the candidate-cache SHA-256; analysis fails if candidates are regenerated or
+reordered after scoring. Pixel GT is never opened by this command.
+
+Compare region-only relabeling and generic CAM-region consensus offline:
+
+```bash
+python -m sam3_remote_wsss.analyze_candidate_region_semantics \
+  --config "$FULL_ROOT/potsdam_patches_config_manual4.json" \
+  --labels-csv data/prompt_ablation_256.csv \
+  --candidate-dir runs/manual4_candidates_256_v2/candidates \
+  --region-score-dir runs/candidate_region_clip_train256 \
+  --cam-dir runs/cam_resnet50_full_repaired/cams_train \
+  --cam-method mean \
+  --output runs/candidate_region_clip_train256/diagnostic.json \
+  --require-all
+```
+
+The consensus diagnostic relabels a candidate only when CAM and the region
+model predict the same image-level-positive class; otherwise it keeps the SAM3
+source class. It reports candidate-level beneficial/destructive relabel rates
+and full pseudo-label mIoU, mF1, OA, foreground metrics, labeled metrics, and
+coverage. GT is read only by this second, explicitly offline diagnostic.
+
 Important config fields:
 
 - `sam3_repo`: path to the original SAM3 repository.

@@ -104,9 +104,6 @@ def score_candidate_region_dataset(args: argparse.Namespace) -> dict:
             for name in image_level[image_id]
             if name in class_by_name
         )
-        if not active_class_ids:
-            skipped["no_positive_classes"] += 1
-            continue
         image_rgb = read_rgbir_as_rgb(item.image_path, config.rgb_band_indices)
         region_features, crop_boxes, mask_fractions = encode_candidate_regions(
             image_rgb=image_rgb,

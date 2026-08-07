@@ -225,6 +225,15 @@ def active_region_decisions(
     if missing:
         raise ValueError(f"Active classes missing from region scores: {missing}")
     active_ids = np.asarray(active_class_ids, dtype=np.int16)
+    if active_ids.size == 0:
+        if scores.shape[0] != 0:
+            raise ValueError(
+                "Cannot assign candidate regions without an active class"
+            )
+        return (
+            np.empty((0,), dtype=np.int16),
+            np.empty((0,), dtype=np.float32),
+        )
     columns = np.asarray(
         [class_to_column[int(class_id)] for class_id in active_ids], dtype=np.int64
     )

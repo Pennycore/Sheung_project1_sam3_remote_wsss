@@ -220,6 +220,26 @@ semantically incorrect SAM3 candidates. It includes both all candidates and a
 separate multi-positive-patch result, since a single-positive patch has no
 meaningful foreground-class alternative. No pseudo label is rewritten.
 
+After freezing a reject-only policy, pseudo labels can be rebuilt without
+running SAM3 again:
+
+```bash
+python -m sam3_remote_wsss.rebuild_candidate_pseudo_labels \
+  --config "$FULL_ROOT/potsdam_patches_config_manual4.json" \
+  --labels-csv data/prompt_ablation_256.csv \
+  --candidate-dir runs/manual4_candidates_256_v2/candidates \
+  --cam-dir runs/cam_resnet50_full_repaired/cams_train \
+  --cam-method mean \
+  --reject-classes impervious_surface,low_vegetation \
+  --output-dir runs/manual4_cam_selective_mean_256 \
+  --require-all
+```
+
+This stage is reject-only: CAM may remove configured-class candidates but
+cannot relabel them. The rebuild metadata records the complete policy and does
+not read pixel GT. Run `evaluate_pseudo_labels` afterward to obtain strict and
+labeled-only mIoU/mF1/OA plus coverage.
+
 Important config fields:
 
 - `sam3_repo`: path to the original SAM3 repository.

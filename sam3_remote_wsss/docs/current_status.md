@@ -43,6 +43,12 @@ impervious surface 与 building/low vegetation、low vegetation 与 tree、car �
 coverage；`pixel_accuracy` 仅作为 `OA` 的兼容别名保留。候选实例诊断不是完整语义图，因此仍
 使用 purity、precision、recall、拒绝率等候选级指标，生成最终伪标签后再计算 mF1/OA/mIoU。
 
+CAM 候选复核已完成。top20 的过滤后主导正确率/像素加权纯度为 `0.9262/0.8846`，mean 为
+`0.9216/0.8745`；但 mean 在 impervious surface 和 low vegetation 上分别多保留约
+`8.39/7.82` 个百分点的正确候选。考虑覆盖不足，下一组探索性规则冻结为 mean CAM 且只过滤
+这两类。新增无 GT 的 `rebuild_candidate_pseudo_labels`，下一步离线重建 baseline、all-class
+mean 和 selective mean 三组完整伪标签并比较 mIoU/mF1/OA，不立即训练 student。
+
 ## 2. 已经完成
 
 - 已实现 Potsdam 数据读取和像素标签到 image-level CSV 的转换。

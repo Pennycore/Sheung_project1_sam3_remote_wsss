@@ -20,6 +20,7 @@ from sam3_remote_wsss.calibrate_candidate_visual_prototypes import (
 from sam3_remote_wsss.candidate_region_scores import (
     build_class_text_prototypes,
     candidate_cache_fingerprint,
+    encode_candidate_regions,
     load_region_score_cache,
     make_candidate_region_views,
     save_region_score_cache,
@@ -110,6 +111,18 @@ class CandidateRegionScoreTests(unittest.TestCase):
         np.testing.assert_allclose(scores, [[2**-0.5, 2**-0.5]], atol=1e-6)
         self.assertEqual(boxes.shape, (1, 4))
         self.assertEqual(fractions.shape, (1,))
+
+    def test_empty_candidate_features_keep_requested_dimension(self) -> None:
+        features, boxes, fractions = encode_candidate_regions(
+            image_rgb=np.zeros((8, 8, 3), dtype=np.uint8),
+            candidates=[],
+            encoder=object(),
+            feature_dimension=512,
+        )
+
+        self.assertEqual(features.shape, (0, 512))
+        self.assertEqual(boxes.shape, (0, 4))
+        self.assertEqual(fractions.shape, (0,))
 
     def test_region_cache_is_bound_to_candidate_cache_hash(self) -> None:
         with TemporaryDirectory() as tmp_dir:

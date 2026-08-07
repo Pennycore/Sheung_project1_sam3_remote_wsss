@@ -151,6 +151,7 @@ def score_candidate_regions(
         context_ratio=context_ratio,
         min_crop_size=min_crop_size,
         background_retain=background_retain,
+        feature_dimension=class_prototypes.shape[1],
     )
     scores = np.einsum(
         "nd,cd->nc",
@@ -169,10 +170,12 @@ def encode_candidate_regions(
     context_ratio: float = 0.25,
     min_crop_size: int = 48,
     background_retain: float = 0.25,
+    feature_dimension: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     if not candidates:
+        dimension = 0 if feature_dimension is None else feature_dimension
         return (
-            np.empty((0, 0), dtype=np.float32),
+            np.empty((0, dimension), dtype=np.float32),
             np.empty((0, 4), dtype=np.int32),
             np.empty((0,), dtype=np.float32),
         )

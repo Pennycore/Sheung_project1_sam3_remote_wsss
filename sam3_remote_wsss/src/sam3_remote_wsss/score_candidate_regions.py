@@ -116,6 +116,7 @@ def score_candidate_region_dataset(args: argparse.Namespace) -> dict:
             context_ratio=args.context_ratio,
             min_crop_size=args.min_crop_size,
             background_retain=args.background_retain,
+            feature_dimension=prototypes.shape[1],
         )
         scores = np.einsum(
             "nd,cd->nc",

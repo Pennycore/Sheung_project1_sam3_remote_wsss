@@ -280,6 +280,52 @@ cannot relabel them. The rebuild metadata records the complete policy and does
 not read pixel GT. Run `evaluate_pseudo_labels` afterward to obtain strict and
 labeled-only mIoU/mF1/OA plus coverage.
 
+For the frozen Keep/Relabel/Ignore V1, calibrate source-class CAM margins on a
+training subset first. This calibration reads only image-level labels, cached
+SAM3 candidates, and CAM maps; it does not open pixel GT:
+
+```bash
+python -m sam3_remote_wsss.calibrate_candidate_reconciliation \
+  --config "$FULL_ROOT/potsdam_patches_config_manual4.json" \
+  --labels-csv data/prompt_ablation_256.csv \
+  --candidate-dir runs/manual4_candidates_256_v2/candidates \
+  --cam-dir runs/cam_resnet50_full_repaired/cams_train \
+  --cam-method mean \
+  --output runs/candidate_reconciliation_v1/calibration_train256.json \
+  --require-all
+```
+
+The calibrator fits a two-component model to the CAM top1-minus-top2 margins
+of source/CAM disagreements. A usable class model supplies that source class's
+threshold; sparse or inseparable classes fall back to the global training
+distribution. Freeze the resulting JSON before evaluating another split.
+
+Apply the frozen calibration to a disjoint validation subset:
+
+```bash
+python -m sam3_remote_wsss.reconcile_candidate_pseudo_labels \
+  --config "$FULL_ROOT/potsdam_patches_config_manual4.json" \
+  --labels-csv data/candidate_validation_256.csv \
+  --candidate-dir runs/manual4_candidates_val256_v1/candidates \
+  --cam-dir "$VAL_CAM_DIR" \
+  --calibration runs/candidate_reconciliation_v1/calibration_train256.json \
+  --output-dir runs/candidate_reconciliation_v1_val256 \
+  --require-all
+
+python -m sam3_remote_wsss.evaluate_pseudo_labels \
+  --config "$FULL_ROOT/potsdam_patches_config_manual4.json" \
+  --pseudo-label-dir runs/candidate_reconciliation_v1_val256/pseudo_labels \
+  --output runs/candidate_reconciliation_v1_val256/pseudo_metrics.json \
+  --require-all
+```
+
+On CAM/source agreement the source class is kept. A disagreement above the
+frozen source threshold is relabeled to the active CAM top1 class; a weaker
+disagreement is written as ignore. The summary records Keep/Relabel/Ignore
+counts and the calibration SHA-256. Validation GT is used only by the final
+evaluation command, which reports mIoU, mF1, OA, foreground metrics, labeled
+metrics, and coverage.
+
 Important config fields:
 
 - `sam3_repo`: path to the original SAM3 repository.

@@ -58,6 +58,30 @@ def fuse_cached_candidates(
 ) -> np.ndarray:
     if len(candidates) != len(keep):
         raise ValueError("Candidate and keep-decision counts differ")
+    assignments = [
+        int(candidate.class_id) if should_keep else None
+        for candidate, should_keep in zip(candidates, keep)
+    ]
+    return fuse_candidate_assignments(
+        image_shape=image_shape,
+        candidates=candidates,
+        class_assignments=assignments,
+        ignore_index=ignore_index,
+        uncovered_label=uncovered_label,
+        conflict_margin=conflict_margin,
+    )
+
+
+def fuse_candidate_assignments(
+    image_shape: tuple[int, int],
+    candidates: list,
+    class_assignments: list[int | None],
+    ignore_index: int,
+    uncovered_label: int,
+    conflict_margin: float,
+) -> np.ndarray:
+    if len(candidates) != len(class_assignments):
+        raise ValueError("Candidate and assignment counts differ")
     canvas = FusionCanvas(
         height=int(image_shape[0]),
         width=int(image_shape[1]),
@@ -65,15 +89,16 @@ def fuse_cached_candidates(
         uncovered_label=uncovered_label,
         conflict_margin=conflict_margin,
     )
-    for candidate, should_keep in zip(candidates, keep):
-        if should_keep:
-            canvas.add_mask(
-                mask=candidate.mask,
-                class_id=candidate.class_id,
-                score=candidate.score,
-                x0=candidate.x0,
-                y0=candidate.y0,
-            )
+    for candidate, class_id in zip(candidates, class_assignments):
+        if class_id is None:
+            continue
+        canvas.add_mask(
+            mask=candidate.mask,
+            class_id=int(class_id),
+            score=candidate.score,
+            x0=candidate.x0,
+            y0=candidate.y0,
+        )
     return canvas.result()
 
 

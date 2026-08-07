@@ -1397,6 +1397,31 @@ vote 和 candidate-mask pixel-area 两种加权。若提供 CAM 缓存，则按�
 foreground confusion pair 报告 mean/top20 CAM 的纠正率、像素加权纠正率和 top1 margin 分布。
 GT 明确标记为 offline oracle diagnostic only，不生成或覆盖任何训练 artifact。
 
+Train256 Oracle 诊断实际运行成功：`input/evaluated=256/256`、候选数 `2,493`、无跳过。
+Baseline 的 mIoU/mF1/OA/FG mIoU/coverage 为
+`0.3800/0.4912/0.4713/0.4560/0.6063`；Oracle Reject 为
+`0.4188/0.5233/0.4859/0.5026/0.5377`；Oracle Relabel 为
+`0.4623/0.5719/0.5417/0.5547/0.6058`。Relabel 相比 Reject 的 mIoU、mF1、OA、FG mIoU、
+FG mF1、coverage 增量分别为 `+0.0435/+0.0487/+0.0558/+0.0522/+0.0584/+0.0681`。
+Relabel 几乎恢复 baseline coverage，同时保持 labeled FG mIoU `0.7804`，证明候选语义修复
+比单纯删除具有显著的 quality-coverage 上限。
+
+宏平均 Geometric Recall、Semantic Recall 和 Recoverable Semantic Gap 为
+`0.6675/0.5589/0.1086`；像素加权值为 `0.6409/0.5289/0.1119`。逐类 gap：impervious
+`0.0354`、building `0.0357`、low vegetation `0.2238`、tree `0.2372`、car `0.0111`。
+Mean CAM 的主要 confusion-pair correction：imp->lowveg `53/71=0.7465`、imp->building
+`29/67=0.4328`、lowveg->tree `19/37=0.5135`、car->tree `9/112=0.0804`。小样本 pair
+只保留为诊断，不据此制定人工类别规则。正式 V1 必须从不含 GT 的 Train CAM margin 分布自动
+估计置信边界，并完整冻结后才进入 Validation256。
+
+代码随后实现 Candidate Reconciliation V1。`calibrate_candidate_reconciliation` 仅使用训练
+image-level 标签、候选缓存与 CAM，对 source/CAM 分歧候选的 CAM top1-top2 margin 进行逐
+source class 两分量 GMM 校准；类别样本不足、分量权重过低或分离度不足时回退到全局训练
+分布。`reconcile_candidate_pseudo_labels` 读取冻结 JSON，执行 Keep/Relabel/Ignore，并在融合时
+保留原候选几何、SAM score、冲突规则和 active image-level class 约束。校准及应用代码均不
+读取 pixel GT；校准 JSON 显式记录 `pixel_gt_used=false`，重建 summary 记录校准文件 SHA-256、
+逐类动作计数与跳过原因。验证 GT 只允许在输出伪标签后的独立评估命令中读取。
+
 指标报告规范同步更新：后续所有完整像素预测必须至少报告六类 `mIoU`、六类宏平均 `mF1`
 和 `OA`，并附逐类 IoU/F1 及前景宏平均。已有 `pixel_accuracy` 与 `OA` 数值相同，继续保留用于
 兼容历史 JSON。带 `255` 的伪标签同时报告 strict 和 labeled-only 指标及 coverage；候选级

@@ -13,13 +13,13 @@ from .analyze_candidate_quality import candidate_quality_record
 from .candidate_cache import candidate_cache_exists, load_candidate_cache
 from .config import load_config
 from .evaluate_pseudo_labels import compute_evaluation_metrics
-from .fusion import FusionCanvas
 from .potsdam import (
     discover_potsdam_items,
     label_rgb_to_ids,
     read_image_level_csv,
     read_label_rgb,
 )
+from .rebuild_candidate_pseudo_labels import fuse_candidate_assignments
 
 
 POLICIES = ("baseline", "oracle_reject", "oracle_relabel")
@@ -112,36 +112,6 @@ def oracle_assignments(
         policy: dict(sorted(counts.items()))
         for policy, counts in actions.items()
     }
-
-
-def fuse_assignments(
-    image_shape: tuple[int, int],
-    candidates: list,
-    class_assignments: list[int | None],
-    ignore_index: int,
-    uncovered_label: int,
-    conflict_margin: float,
-) -> np.ndarray:
-    if len(candidates) != len(class_assignments):
-        raise ValueError("Candidate and assignment counts differ")
-    canvas = FusionCanvas(
-        height=int(image_shape[0]),
-        width=int(image_shape[1]),
-        ignore_index=ignore_index,
-        uncovered_label=uncovered_label,
-        conflict_margin=conflict_margin,
-    )
-    for candidate, class_id in zip(candidates, class_assignments):
-        if class_id is None:
-            continue
-        canvas.add_mask(
-            mask=candidate.mask,
-            class_id=int(class_id),
-            score=float(candidate.score),
-            x0=int(candidate.x0),
-            y0=int(candidate.y0),
-        )
-    return canvas.result()
 
 
 def empty_metric_state(num_classes: int) -> dict[str, np.ndarray]:
@@ -533,7 +503,7 @@ def analyze_candidate_recoverability(
         )
         for policy, counts in image_actions.items():
             action_counts[policy].update(counts)
-            prediction = fuse_assignments(
+            prediction = fuse_candidate_assignments(
                 image_shape=tuple(int(value) for value in metadata["image_shape"]),
                 candidates=candidates,
                 class_assignments=assignments[policy],

@@ -93,6 +93,26 @@ Semantic Recall、Recoverable Semantic Gap、两种 SAM-to-GT confusion 以及�
 当前下一步是在服务器现有2,493个候选上运行该诊断，判断“保留几何并修正语义”是否具有足够
 上限，再决定 Candidate Reconciliation V1 的实现。
 
+Train256 Candidate Recoverability 已完成（256 images / 2,493 candidates / 0 skipped）。Baseline、
+Oracle Reject、Oracle Relabel 的 mIoU 为 `0.3800/0.4188/0.4623`，foreground mIoU 为
+`0.4560/0.5026/0.5547`，coverage 为 `0.6063/0.5377/0.6058`。Relabel 相对 Reject 提高
+`+0.0435 mIoU`、`+0.0522 foreground mIoU`、`+0.0558 OA`，并恢复 `+0.0681 coverage`；
+这确认“保留候选几何并修正语义”具有明显上限，正式进入 Candidate Reconciliation V1。
+
+宏平均 Geometric/Semantic Recall 为 `0.6675/0.5589`，Recoverable Semantic Gap 为
+`0.1086`。低矮植被和树的 gap 最大，分别为 `0.2238/0.2372`；impervious/building/car 为
+`0.0354/0.0357/0.0111`。Mean CAM 对主要错配的纠正率为 imp->lowveg `0.7465`、
+imp->building `0.4328`、lowveg->tree `0.5135`，但 car->tree 仅 `0.0804`。下一步只使用
+Train CAM top1-top2 margin 的无 GT 分布做 per-source 自适应校准，再冻结应用到 Validation256。
+
+Candidate Reconciliation V1 已实现为两个严格分离的阶段。训练校准工具只读取 image-level
+标签、SAM3 候选缓存和 CAM，使用 source/CAM 分歧候选的 top1-top2 margin 拟合两分量模型；
+样本不足或不可分的类别回退到全局训练分布。应用工具读取冻结的校准 JSON：CAM 与 source
+一致时 Keep，高 margin 分歧时 Relabel 到 image-level 正类约束下的 CAM top1，低 margin
+分歧时 Ignore。两阶段均不读取像素 GT；输出记录逐类动作数、校准文件 SHA-256 和
+`pixel_gt_used=false`。下一步先在 Train256 生成并冻结 calibration JSON，检查自动阈值后
+原样应用到 Validation256，最终统一报告 mIoU、mF1、OA、前景指标和 coverage。
+
 ## 2. 已经完成
 
 - 已实现 Potsdam 数据读取和像素标签到 image-level CSV 的转换。

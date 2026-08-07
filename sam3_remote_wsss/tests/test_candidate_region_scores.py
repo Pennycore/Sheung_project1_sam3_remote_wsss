@@ -14,6 +14,9 @@ from sam3_remote_wsss.analyze_candidate_region_semantics import (
     summarize_assignment_records,
 )
 from sam3_remote_wsss.candidate_cache import CandidateMask, save_candidate_cache
+from sam3_remote_wsss.calibrate_candidate_visual_prototypes import (
+    calibrate_candidate_visual_prototypes,
+)
 from sam3_remote_wsss.candidate_region_scores import (
     build_class_text_prototypes,
     candidate_cache_fingerprint,
@@ -23,6 +26,11 @@ from sam3_remote_wsss.candidate_region_scores import (
     score_candidate_regions,
 )
 from sam3_remote_wsss.config import ClassSpec
+from sam3_remote_wsss.candidate_visual_prototypes import (
+    load_visual_prototype_calibration,
+    robust_visual_prototype,
+    save_visual_prototype_calibration,
+)
 
 
 class FakeEncoder:
@@ -142,6 +150,131 @@ class CandidateRegionScoreTests(unittest.TestCase):
             data_path.write_bytes(data_path.read_bytes() + b"changed")
             with self.assertRaisesRegex(ValueError, "changed after region scoring"):
                 load_region_score_cache(score_dir, image_id, candidate_dir)
+
+    def test_robust_visual_prototype_rejects_feature_outlier(self) -> None:
+        features = np.asarray(
+            [[1.0, 0.0], [0.99, 0.1], [0.98, -0.1], [-1.0, 0.0]],
+            dtype=np.float32,
+        )
+
+        prototype, retained, similarities = robust_visual_prototype(
+            features, keep_fraction=0.75, iterations=2
+        )
+
+        self.assertEqual(retained.size, 3)
+        self.assertNotIn(3, retained.tolist())
+        self.assertGreater(float(prototype[0]), 0.99)
+        self.assertLess(float(similarities[3]), -0.99)
+
+    def test_visual_prototype_calibration_does_not_require_pixel_gt(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            image_id = "top_potsdam_2_10_x0000_y0000"
+            config_path = root / "config.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "dataset_root": str(root / "missing_dataset"),
+                        "image_dir": "images",
+                        "label_dir": "labels",
+                        "sam3_repo": str(root),
+                        "checkpoint_path": None,
+                        "device": "cpu",
+                        "ignore_index": 255,
+                        "uncovered_label": 255,
+                        "classes": [
+                            {
+                                "id": 1,
+                                "name": "surface",
+                                "label_color": [255, 255, 255],
+                                "prompts": ["surface"],
+                            },
+                            {
+                                "id": 2,
+                                "name": "building",
+                                "label_color": [0, 0, 255],
+                                "prompts": ["building"],
+                            },
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            labels_csv = root / "labels.csv"
+            with labels_csv.open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(
+                    handle, fieldnames=["image_id", "surface", "building"]
+                )
+                writer.writeheader()
+                writer.writerow(
+                    {"image_id": image_id, "surface": 1, "building": 1}
+                )
+            candidate_dir = root / "candidates"
+            candidates = [
+                CandidateMask(
+                    1,
+                    "surface",
+                    "surface",
+                    0.9,
+                    np.ones((4, 2), dtype=bool),
+                    x0=0,
+                ),
+                CandidateMask(
+                    2,
+                    "building",
+                    "building",
+                    0.9,
+                    np.ones((4, 2), dtype=bool),
+                    x0=2,
+                ),
+            ]
+            save_candidate_cache(candidate_dir, image_id, (4, 4), candidates)
+            score_dir = root / "scores"
+            save_region_score_cache(
+                score_dir,
+                image_id,
+                scores=np.asarray([[0.9, 0.1], [0.1, 0.9]], dtype=np.float32),
+                class_ids=np.asarray([1, 2]),
+                active_class_ids=[1, 2],
+                crop_boxes=np.asarray([[0, 0, 2, 4], [2, 0, 4, 4]]),
+                mask_fractions=np.asarray([1.0, 1.0]),
+                candidate_fingerprint=candidate_cache_fingerprint(
+                    candidate_dir, image_id
+                ),
+                metadata={"model_name": "fake", "weights_source": "fake.pt"},
+                region_features=np.asarray(
+                    [[1.0, 0.0], [0.0, 1.0]], dtype=np.float32
+                ),
+            )
+            cam_dir = root / "cams"
+            cam_dir.mkdir()
+            cams = np.zeros((2, 4, 4), dtype=np.float32)
+            cams[0, :, :2] = 1.0
+            cams[1, :, 2:] = 1.0
+            np.savez_compressed(
+                cam_dir / f"{image_id}.npz",
+                cams=cams,
+                class_ids=np.asarray([1, 2]),
+            )
+            output = root / "calibration.json"
+
+            summary = calibrate_candidate_visual_prototypes(
+                config_path=config_path,
+                labels_csv=labels_csv,
+                candidate_dir=candidate_dir,
+                region_score_dir=score_dir,
+                cam_dir=cam_dir,
+                output_path=output,
+                min_seeds_per_class=1,
+            )
+            metadata, class_ids, prototypes = load_visual_prototype_calibration(
+                output
+            )
+
+            self.assertFalse(summary["protocol"]["pixel_gt_used"])
+            self.assertEqual(metadata["evaluated_images"], 1)
+            np.testing.assert_array_equal(class_ids, [1, 2])
+            np.testing.assert_allclose(prototypes, np.eye(2), atol=1e-6)
 
     def test_assignment_audit_separates_beneficial_and_destructive(self) -> None:
         records = [
@@ -266,7 +399,10 @@ class CandidateRegionScoreTests(unittest.TestCase):
                 candidate_fingerprint=candidate_cache_fingerprint(
                     candidate_dir, image_id
                 ),
-                metadata={"model_name": "fake"},
+                metadata={"model_name": "fake", "weights_source": "fake.pt"},
+                region_features=np.asarray(
+                    [[1.0, 0.0], [0.0, 1.0]], dtype=np.float32
+                ),
             )
             cam_dir = root / "cams"
             cam_dir.mkdir()
@@ -298,6 +434,31 @@ class CandidateRegionScoreTests(unittest.TestCase):
             self.assertAlmostEqual(consensus["foreground_miou"], 1.0)
             self.assertAlmostEqual(consensus["foreground_mf1"], 1.0)
             self.assertAlmostEqual(consensus["oa"], 1.0)
+
+            calibration = root / "visual_prototypes.json"
+            save_visual_prototype_calibration(
+                calibration,
+                class_ids=np.asarray([1, 2]),
+                prototypes=np.eye(2, dtype=np.float32),
+                metadata={
+                    "model_name": "fake",
+                    "weights_source": "fake.pt",
+                    "feature_dimension": 2,
+                    "protocol": {"pixel_gt_used": False},
+                },
+            )
+            prototype_report, _ = analyze_candidate_region_semantics(
+                config_path=config_path,
+                labels_csv=labels_csv,
+                candidate_dir=candidate_dir,
+                region_score_dir=score_dir,
+                cam_dir=cam_dir,
+                prototype_calibration=calibration,
+            )
+            self.assertAlmostEqual(
+                prototype_report["metrics"]["cam_region_consensus"]["miou"],
+                1.0,
+            )
 
 
 if __name__ == "__main__":

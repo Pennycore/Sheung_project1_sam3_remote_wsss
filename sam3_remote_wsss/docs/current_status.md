@@ -158,6 +158,20 @@ V2-b 的第一阶段代码已经完成。`score_candidate_regions` 对每个冻�
 伪标签 mIoU、mF1、OA、foreground、labeled-only 和 coverage。下一步在服务器上分别用本地 OpenAI
 CLIP 与 RemoteCLIP 权重完成 Train256/Validation256 分数缓存，先比较独立语义证据，再冻结 V2-b。
 
+Train256 的零样本文本原型 V2-b 已判定失败。CLIP 的 baseline/region-only/CAM+region mIoU 为
+`0.3800/0.1336/0.3613`，mF1 为 `0.4912/0.2068/0.4789`；RemoteCLIP 对应 mIoU 为
+`0.3800/0.1143/0.3619`，mF1 为 `0.4912/0.1821/0.4828`。两种 consensus 的 OA 略升至
+`0.4820/0.4832`，但宏平均指标下降，不能采用。CLIP/RemoteCLIP 的有益重标率为
+`0.3167/0.4130`，破坏性重标率为 `0.5583/0.5290`。joint margin 从低到高筛选没有降低破坏率，
+因此停止 margin 调参，也不进入 Validation256。
+
+错误呈稳定文本对齐偏置，例如 car->impervious、tree->low vegetation；直接将这些 GT 观察写成
+allowlist 会退回 V2-a 的数据集特定规则。现已实现无 GT 的视觉原型替代：新版区域缓存额外保存候选
+融合 embedding；`calibrate_candidate_visual_prototypes` 从 SAM3 source 与 CAM 一致的候选中逐类建立
+鲁棒视觉中心，迭代保留最接近中心的 `70%` 弱种子，不发现或读取 GT 目录。冻结中心可通过原分析器的
+`--prototype-calibration` 接入，模型名、权重来源和维度必须与区域缓存一致。下一步重跑 Train256 的
+embedding 缓存，分别校准 CLIP/RemoteCLIP 视觉原型；只有 Train256 候选审计改善后才冻结到 Validation256。
+
 ## 2. 已经完成
 
 - 已实现 Potsdam 数据读取和像素标签到 image-level CSV 的转换。

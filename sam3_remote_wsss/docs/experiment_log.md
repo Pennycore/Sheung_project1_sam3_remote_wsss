@@ -1485,6 +1485,23 @@ V2-b 区域语义阶段开始实现。新增候选双视图：包含周围上下
 报告 mIoU、mF1、OA、foreground、labeled-only 与 coverage。代码回归测试为 `52/52` 通过；尚未在
 服务器权重上产生结果，因此当前没有宣称 V2-b 优于 V2-a。
 
+Train256 零样本文本原型 V2-b 完成。CLIP 的 baseline、region-only、CAM+region consensus 的
+mIoU/mF1/OA 分别为 `0.3800/0.4912/0.4750`、`0.1336/0.2068/0.2799`、
+`0.3613/0.4789/0.4820`；RemoteCLIP 分别为 `0.3800/0.4912/0.4750`、
+`0.1143/0.1821/0.2216`、`0.3619/0.4828/0.4832`。两种区域模型直接重标均严重失败；consensus
+虽提高 OA，但 mIoU/mF1/foreground mIoU 下降，不能作为主方法。
+
+CLIP consensus 的120次重标中 beneficial/destructive=`0.3167/0.5583`，RemoteCLIP 的138次为
+`0.4130/0.5290`。对 CAM target advantage 与区域 top1 margin 取最小值得到 joint margin；从全部候选
+提高到90%分位后，CLIP destructive 从 `0.5583` 上升到 `0.7500`，RemoteCLIP 从 `0.5290` 上升到
+`0.7143`。因此置信 margin 与语义正确性仍不对应，正式停止该方向的阈值搜索，未使用 Validation GT。
+
+随后实现弱监督视觉原型 V2-b2。候选缓存新增 float16 归一化融合 embedding；校准阶段只选择 SAM3
+source 与 CAM top1 一致的候选作为弱种子，逐类迭代去除距离视觉均值最远的30%，冻结鲁棒中心。
+应用阶段按 embedding 到中心的余弦相似度预测 image-level 阳性类，仍仅在 CAM 与视觉中心一致时重标，
+其余 Keep。校准不读取 pixel GT，并有“数据集目录完全不存在仍可校准”的测试；全套 `54/54` 通过。
+该方法尚无服务器结果，不宣称优于 V2-a。
+
 ## 后续实验记录模板
 
 ```text

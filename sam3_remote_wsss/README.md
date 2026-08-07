@@ -395,6 +395,39 @@ source class. It reports candidate-level beneficial/destructive relabel rates
 and full pseudo-label mIoU, mF1, OA, foreground metrics, labeled metrics, and
 coverage. GT is read only by this second, explicitly offline diagnostic.
 
+The direct text-prototype experiment is retained as a negative ablation. For a
+generic alternative without a manual source-target allowlist, rerun region
+scoring into a new directory so each cache also contains the normalized visual
+embedding. Then calibrate robust visual prototypes using only candidates whose
+SAM3 source agrees with CAM:
+
+```bash
+python -m sam3_remote_wsss.calibrate_candidate_visual_prototypes \
+  --config "$FULL_ROOT/potsdam_patches_config_manual4.json" \
+  --labels-csv data/prompt_ablation_256.csv \
+  --candidate-dir runs/manual4_candidates_256_v2/candidates \
+  --region-score-dir runs/candidate_region_clip_train256_v2 \
+  --cam-dir runs/cam_resnet50_full_repaired/cams_train \
+  --output runs/candidate_region_clip_train256_v2/visual_prototypes.json \
+  --keep-fraction 0.7 \
+  --iterations 3 \
+  --require-all
+```
+
+This calibration does not discover or open the pixel-label directory. It
+iteratively removes the least prototype-consistent 30 percent of each class's
+weak seeds, then freezes one visual center per class. Apply the frozen centers
+through the same diagnostic by adding:
+
+```bash
+--prototype-calibration \
+  runs/candidate_region_clip_train256_v2/visual_prototypes.json
+```
+
+For a transfer check, always calibrate on Train256 and apply the unchanged
+prototype file to independently scored Validation256 candidates. The analyzer
+verifies model name, checkpoint identity, and feature dimension before use.
+
 Important config fields:
 
 - `sam3_repo`: path to the original SAM3 repository.

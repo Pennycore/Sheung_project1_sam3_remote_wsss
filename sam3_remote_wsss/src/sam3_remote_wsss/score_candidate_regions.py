@@ -6,14 +6,15 @@ from dataclasses import replace
 import json
 from pathlib import Path
 
+import numpy as np
 from tqdm import tqdm
 
 from .candidate_cache import candidate_cache_exists, load_candidate_cache
 from .candidate_region_scores import (
     build_class_text_prototypes,
     candidate_cache_fingerprint,
+    encode_candidate_regions,
     save_region_score_cache,
-    score_candidate_regions,
 )
 from .config import load_config
 from .potsdam import (
@@ -107,15 +108,20 @@ def score_candidate_region_dataset(args: argparse.Namespace) -> dict:
             skipped["no_positive_classes"] += 1
             continue
         image_rgb = read_rgbir_as_rgb(item.image_path, config.rgb_band_indices)
-        scores, crop_boxes, mask_fractions = score_candidate_regions(
+        region_features, crop_boxes, mask_fractions = encode_candidate_regions(
             image_rgb=image_rgb,
             candidates=candidates,
             encoder=encoder,
-            class_prototypes=prototypes,
             batch_size=args.batch_size,
             context_ratio=args.context_ratio,
             min_crop_size=args.min_crop_size,
             background_retain=args.background_retain,
+        )
+        scores = np.einsum(
+            "nd,cd->nc",
+            region_features,
+            prototypes,
+            optimize=False,
         )
         save_region_score_cache(
             output_dir=output_dir,
@@ -128,6 +134,7 @@ def score_candidate_region_dataset(args: argparse.Namespace) -> dict:
             candidate_fingerprint=candidate_cache_fingerprint(
                 args.candidate_dir, image_id
             ),
+            region_features=region_features,
             metadata={
                 "candidate_cache": str(Path(args.candidate_dir).resolve()),
                 "candidate_image_shape": candidate_metadata["image_shape"],

@@ -19,6 +19,10 @@ from .candidate_region_scores import (
     active_region_decisions,
     load_region_score_cache,
 )
+from .candidate_visual_prototypes import (
+    load_visual_prototype_calibration,
+    normalize_features,
+)
 from .config import load_config
 from .evaluate_pseudo_labels import compute_evaluation_metrics
 from .potsdam import (
@@ -45,6 +49,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--candidate-dir", required=True)
     parser.add_argument("--region-score-dir", required=True)
     parser.add_argument("--cam-dir", required=True)
+    parser.add_argument(
+        "--prototype-calibration",
+        default=None,
+        help=(
+            "Optional frozen CAM-consistent visual prototype calibration. "
+            "When omitted, use Manual4 text-prototype region scores."
+        ),
+    )
     parser.add_argument("--output", required=True)
     parser.add_argument("--records-output", default=None)
     parser.add_argument("--cam-method", choices=("mean", "top20"), default="mean")
@@ -141,6 +153,7 @@ def analyze_candidate_region_semantics(
     candidate_dir: str | Path,
     region_score_dir: str | Path,
     cam_dir: str | Path,
+    prototype_calibration: str | Path | None = None,
     cam_method: str = "mean",
     limit: int | None = None,
 ) -> tuple[dict, list[dict]]:
@@ -156,6 +169,15 @@ def analyze_candidate_region_semantics(
     candidate_dir = Path(candidate_dir)
     region_score_dir = Path(region_score_dir)
     cam_dir = Path(cam_dir)
+    prototype_metadata = None
+    prototype_class_ids = None
+    visual_prototypes = None
+    if prototype_calibration is not None:
+        (
+            prototype_metadata,
+            prototype_class_ids,
+            visual_prototypes,
+        ) = load_visual_prototype_calibration(prototype_calibration)
     states = {policy: empty_metric_state(num_classes) for policy in POLICIES}
     records = []
     skipped = Counter()
@@ -201,8 +223,29 @@ def analyze_candidate_region_semantics(
             for name in image_level[image_id]
             if name in class_by_name
         )
+        if visual_prototypes is None:
+            semantic_scores = score_data["scores"].astype(np.float32)
+            semantic_class_ids = score_data["class_ids"]
+        else:
+            if "region_features" not in score_data:
+                raise ValueError(
+                    "Visual prototype analysis requires region_features; rerun "
+                    "score_candidate_regions into a new output directory"
+                )
+            _validate_prototype_model(
+                prototype_metadata,
+                score_metadata,
+                score_data["region_features"].shape[1],
+            )
+            semantic_scores = np.einsum(
+                "nd,cd->nc",
+                normalize_features(score_data["region_features"]),
+                visual_prototypes,
+                optimize=False,
+            )
+            semantic_class_ids = prototype_class_ids
         region_predicted, region_margins = active_region_decisions(
-            score_data["scores"], score_data["class_ids"], active_class_ids
+            semantic_scores, semantic_class_ids, active_class_ids
         )
         with np.load(cam_path, allow_pickle=False) as data:
             cams = data["cams"].astype(np.float32)
@@ -292,7 +335,11 @@ def analyze_candidate_region_semantics(
             "pixel_gt_used_for_evaluation_only": True,
             "region_classes_restricted_to_image_level_positives": True,
             "region_view": "mean of context and mask-emphasized CLIP features",
-            "region_text": "mean normalized embedding of Manual4 prompts per class",
+            "region_semantics": (
+                "mean normalized embedding of Manual4 prompts per class"
+                if visual_prototypes is None
+                else "frozen robust CAM-consistent visual prototypes"
+            ),
             "cam_method": cam_method,
             "consensus_policy": (
                 "relabel only when CAM and region model predict the same active "
@@ -305,6 +352,11 @@ def analyze_candidate_region_semantics(
             "candidate_dir": str(candidate_dir.resolve()),
             "region_score_dir": str(region_score_dir.resolve()),
             "cam_dir": str(cam_dir.resolve()),
+            "prototype_calibration": (
+                None
+                if prototype_calibration is None
+                else str(Path(prototype_calibration).resolve())
+            ),
         },
         "input_images": len(image_ids),
         "evaluated_images": evaluated_images,
@@ -340,6 +392,28 @@ def _assigned_pixel_purity(
     return correct / valid
 
 
+def _validate_prototype_model(
+    prototype_metadata: dict,
+    score_metadata: dict,
+    feature_dimension: int,
+) -> None:
+    expected = (
+        prototype_metadata.get("model_name"),
+        prototype_metadata.get("weights_source"),
+        int(prototype_metadata.get("feature_dimension", -1)),
+    )
+    current = (
+        score_metadata.get("model_name"),
+        score_metadata.get("weights_source"),
+        int(feature_dimension),
+    )
+    if current != expected:
+        raise ValueError(
+            "Region cache model does not match visual prototype calibration: "
+            f"expected={expected}, current={current}"
+        )
+
+
 def _finite_or_none(value: float) -> float | None:
     return float(value) if np.isfinite(value) else None
 
@@ -367,6 +441,7 @@ def main() -> None:
         candidate_dir=args.candidate_dir,
         region_score_dir=args.region_score_dir,
         cam_dir=args.cam_dir,
+        prototype_calibration=args.prototype_calibration,
         cam_method=args.cam_method,
         limit=args.limit,
     )

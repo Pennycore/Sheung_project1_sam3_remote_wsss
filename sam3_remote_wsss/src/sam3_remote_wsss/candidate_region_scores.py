@@ -143,6 +143,39 @@ def score_candidate_regions(
             np.empty((0, 4), dtype=np.int32),
             np.empty((0,), dtype=np.float32),
         )
+    features, boxes, mask_fractions = encode_candidate_regions(
+        image_rgb=image_rgb,
+        candidates=candidates,
+        encoder=encoder,
+        batch_size=batch_size,
+        context_ratio=context_ratio,
+        min_crop_size=min_crop_size,
+        background_retain=background_retain,
+    )
+    scores = np.einsum(
+        "nd,cd->nc",
+        features,
+        class_prototypes.astype(np.float32, copy=False),
+        optimize=False,
+    )
+    return scores.astype(np.float32, copy=False), boxes, mask_fractions
+
+
+def encode_candidate_regions(
+    image_rgb: np.ndarray,
+    candidates: Sequence,
+    encoder,
+    batch_size: int = 32,
+    context_ratio: float = 0.25,
+    min_crop_size: int = 48,
+    background_retain: float = 0.25,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    if not candidates:
+        return (
+            np.empty((0, 0), dtype=np.float32),
+            np.empty((0, 4), dtype=np.int32),
+            np.empty((0,), dtype=np.float32),
+        )
     images = []
     boxes = []
     mask_fractions = []
@@ -166,9 +199,8 @@ def score_candidate_regions(
     fused = features.reshape(len(candidates), 2, -1).mean(axis=1)
     norms = np.linalg.norm(fused, axis=1, keepdims=True)
     fused = fused / np.maximum(norms, 1e-12)
-    scores = fused @ class_prototypes.astype(np.float32, copy=False).T
     return (
-        scores.astype(np.float32, copy=False),
+        fused.astype(np.float32, copy=False),
         np.asarray(boxes, dtype=np.int32),
         np.asarray(mask_fractions, dtype=np.float32),
     )
@@ -214,6 +246,7 @@ def save_region_score_cache(
     mask_fractions: np.ndarray,
     candidate_fingerprint: str,
     metadata: dict,
+    region_features: np.ndarray | None = None,
 ) -> None:
     output_root = Path(output_dir)
     output_root.mkdir(parents=True, exist_ok=True)
@@ -222,24 +255,35 @@ def save_region_score_cache(
     )
     data_path = output_root / f"{image_id}.npz"
     metadata_path = output_root / f"{image_id}.json"
+    arrays = {
+        "format_version": np.asarray(
+            [REGION_SCORE_FORMAT_VERSION], dtype=np.int16
+        ),
+        "candidate_indices": np.arange(scores.shape[0], dtype=np.int32),
+        "scores": scores.astype(np.float32, copy=False),
+        "class_ids": np.asarray(class_ids, dtype=np.int16),
+        "active_class_ids": np.asarray(active_class_ids, dtype=np.int16),
+        "predicted_class_ids": predicted.astype(np.int16, copy=False),
+        "margins": margins,
+        "crop_boxes": np.asarray(crop_boxes, dtype=np.int32),
+        "mask_fractions": np.asarray(mask_fractions, dtype=np.float32),
+    }
+    if region_features is not None:
+        features = np.asarray(region_features, dtype=np.float32)
+        if features.ndim != 2 or features.shape[0] != scores.shape[0]:
+            raise ValueError("region_features must be NxD and align with scores")
+        arrays["region_features"] = features.astype(np.float16)
     with data_path.open("wb") as handle:
-        np.savez_compressed(
-            handle,
-            format_version=np.asarray([REGION_SCORE_FORMAT_VERSION], dtype=np.int16),
-            candidate_indices=np.arange(scores.shape[0], dtype=np.int32),
-            scores=scores.astype(np.float32, copy=False),
-            class_ids=np.asarray(class_ids, dtype=np.int16),
-            active_class_ids=np.asarray(active_class_ids, dtype=np.int16),
-            predicted_class_ids=predicted.astype(np.int16, copy=False),
-            margins=margins,
-            crop_boxes=np.asarray(crop_boxes, dtype=np.int32),
-            mask_fractions=np.asarray(mask_fractions, dtype=np.float32),
-        )
+        np.savez_compressed(handle, **arrays)
     payload = {
         "format_version": REGION_SCORE_FORMAT_VERSION,
         "image_id": image_id,
         "candidate_count": int(scores.shape[0]),
         "candidate_cache_sha256": candidate_fingerprint,
+        "region_features_saved": region_features is not None,
+        "region_feature_dtype": (
+            None if region_features is None else "float16"
+        ),
         **metadata,
     }
     metadata_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")

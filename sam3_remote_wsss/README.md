@@ -331,6 +331,24 @@ counts and the calibration SHA-256. Validation GT is used only by the final
 evaluation command, which reports mIoU, mF1, OA, foreground metrics, labeled
 metrics, and coverage.
 
+For a selective relabeling diagnostic, pass an explicit source-target
+allowlist and keep all other disagreements at their original SAM3 source
+class:
+
+```bash
+python -m sam3_remote_wsss.reconcile_candidate_pseudo_labels \
+  ... \
+  --relabel-pairs \
+    impervious_surface:low_vegetation,impervious_surface:building,low_vegetation:tree \
+  --disagreement-fallback keep
+```
+
+The allowlist is recorded in `summary.json`; it is never hard-coded in the
+implementation. Omitting both options exactly preserves V1's all-pair relabel
+plus ignore-fallback behavior. A dataset-specific allowlist is an ablation for
+testing the value of semantic correction, not a general replacement for an
+independent region-semantic model.
+
 Important config fields:
 
 - `sam3_repo`: path to the original SAM3 repository.

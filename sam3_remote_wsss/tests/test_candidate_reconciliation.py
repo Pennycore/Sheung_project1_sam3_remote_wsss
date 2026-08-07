@@ -15,11 +15,74 @@ from sam3_remote_wsss.calibrate_candidate_reconciliation import (
 )
 from sam3_remote_wsss.candidate_cache import CandidateMask, save_candidate_cache
 from sam3_remote_wsss.reconcile_candidate_pseudo_labels import (
+    reconcile_candidate_decisions,
     reconcile_candidate_pseudo_labels,
 )
 
 
 class CandidateReconciliationTests(unittest.TestCase):
+    def test_selective_relabel_keeps_disallowed_and_low_margin_pairs(self) -> None:
+        candidates = [
+            CandidateMask(
+                class_id=1,
+                class_name="surface",
+                prompt="surface",
+                score=0.8,
+                mask=np.ones((1, 1), dtype=bool),
+                x0=index,
+                y0=0,
+            )
+            for index in range(2)
+        ]
+        cams = np.asarray(
+            [
+                [[0.4, 0.1]],
+                [[0.6, 0.9]],
+            ],
+            dtype=np.float32,
+        )
+        calibration = {
+            "cam_method": "mean",
+            "per_source": {
+                "surface": {
+                    "threshold": 0.5,
+                    "threshold_source": "test",
+                }
+            },
+        }
+
+        selective = reconcile_candidate_decisions(
+            candidates=candidates,
+            cams=cams,
+            cam_class_ids=np.asarray([1, 2], dtype=np.int64),
+            active_class_ids=[1, 2],
+            calibration=calibration,
+            relabel_pairs={(1, 2)},
+            disagreement_fallback="keep",
+        )
+        self.assertEqual(
+            [decision["action"] for decision in selective],
+            ["keep", "relabel"],
+        )
+        self.assertEqual(
+            [decision["assigned_class_id"] for decision in selective],
+            [1, 2],
+        )
+
+        blocked = reconcile_candidate_decisions(
+            candidates=candidates,
+            cams=cams,
+            cam_class_ids=np.asarray([1, 2], dtype=np.int64),
+            active_class_ids=[1, 2],
+            calibration=calibration,
+            relabel_pairs=set(),
+            disagreement_fallback="keep",
+        )
+        self.assertEqual(
+            [decision["action"] for decision in blocked],
+            ["keep", "keep"],
+        )
+
     def test_two_component_gmm_separates_low_and_high_margins(self) -> None:
         fit = fit_two_component_gmm(
             np.asarray([0.08, 0.10, 0.12, 0.78, 0.82, 0.86])

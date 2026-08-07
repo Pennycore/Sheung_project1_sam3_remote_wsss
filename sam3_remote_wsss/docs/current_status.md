@@ -122,6 +122,15 @@ Validation256 仍达到 `0.4328 mIoU/0.5471 mF1/0.4710 OA`，比 baseline 高约
 校准而非候选几何上限。代码现支持用冻结 calibration 做离线 GT 动作审计；下一步先量化逐类
 有益/破坏性 Relabel 和 Ignore 误删率，不训练 student，也不据 validation GT 重拟合阈值。
 
+动作审计显示 V1 的 Train/Validation 行为几乎一致：Relabel 正确率仅 `0.2291/0.2346`，
+破坏性 Relabel 比例为 `0.6218/0.6305`，Ignore 删除原类别正确候选的比例为
+`0.7371/0.7387`。主要失败对 `car->impervious` 的正确率仅 `0.0252/0.0194`；稳定的潜在
+有效对为 `impervious->low vegetation`（`0.6939/0.8298`）、`impervious->building`
+（`0.8182/0.5294`，像素纯度 `0.9059/0.7955`）和 `low vegetation->tree`
+（`0.9000/0.8333`）。现已实现通用 relabel-pair allowlist 与 `keep` fallback。下一实验 V2-a
+仅重标这三个方向，其他分歧保留 SAM3 source，不产生候选级 Ignore；它用于验证可靠语义修复
+能否带来收益，类别 allowlist 仍视为数据集特定消融，不能作为最终通用贡献。
+
 ## 2. 已经完成
 
 - 已实现 Potsdam 数据读取和像素标签到 image-level CSV 的转换。

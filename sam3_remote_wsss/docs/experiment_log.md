@@ -1438,6 +1438,16 @@ CAM margin 与语义正确性之间缺少可靠对应。car 占 V1 Relabel 的 `
 语义置信度。新增冻结策略动作审计，报告 assigned purity、有益/破坏性 Relabel、Ignore 删除
 正确 source 的比例及逐 source-to-target 结果，作为 V2 设计依据；该审计不修改 calibration。
 
+Train/Validation 动作审计结果高度一致：总体 Relabel 正确率 `0.2291/0.2346`、破坏性比例
+`0.6218/0.6305`、Ignore source-dominant 比例 `0.7371/0.7387`。逐对稳定结果：
+`car->impervious` `0.0252/0.0194`，`building->impervious` `0/0`，均稳定失败；
+`impervious->low vegetation` `0.6939/0.8298`、`impervious->building` `0.8182/0.5294`
+（像素纯度 `0.9059/0.7955`）、`low vegetation->tree` `0.9000/0.8333`，在两划分均显示
+正收益潜力。由此定义 V2-a 机制诊断：仍使用冻结的无 GT margin 阈值，只允许上述三个
+source-target 对执行 Relabel，所有低置信或非 allowlist 分歧回退 Keep，不再 Ignore。代码通过
+CLI 接收 allowlist，不硬编码类别；该设置用于验证 semantic correction 价值，最终通用方法仍需
+独立区域语义证据，不能将 validation 派生类别先验作为主要贡献。
+
 指标报告规范同步更新：后续所有完整像素预测必须至少报告六类 `mIoU`、六类宏平均 `mF1`
 和 `OA`，并附逐类 IoU/F1 及前景宏平均。已有 `pixel_accuracy` 与 `OA` 数值相同，继续保留用于
 兼容历史 JSON。带 `255` 的伪标签同时报告 strict 和 labeled-only 指标及 coverage；候选级

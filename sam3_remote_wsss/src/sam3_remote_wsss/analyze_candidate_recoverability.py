@@ -21,6 +21,7 @@ from .potsdam import (
 )
 from .rebuild_candidate_pseudo_labels import fuse_candidate_assignments
 from .reconcile_candidate_pseudo_labels import (
+    parse_relabel_pairs,
     reconcile_candidate_decisions,
     validate_reconciliation_calibration,
 )
@@ -62,6 +63,16 @@ def parse_args() -> argparse.Namespace:
             "Optional frozen reconciliation calibration. When supplied, report "
             "GT-only action audits for Keep/Relabel/Ignore decisions."
         ),
+    )
+    parser.add_argument(
+        "--relabel-pairs",
+        default=None,
+        help="Optional source:target allowlist used by the audited policy.",
+    )
+    parser.add_argument(
+        "--disagreement-fallback",
+        choices=("ignore", "keep"),
+        default="ignore",
     )
     parser.add_argument("--output", required=True)
     parser.add_argument("--limit", type=int, default=None)
@@ -541,6 +552,8 @@ def analyze_candidate_recoverability(
     candidate_dir: str | Path,
     cam_dir: str | Path | None = None,
     calibration_path: str | Path | None = None,
+    relabel_pairs: str | None = None,
+    disagreement_fallback: str = "ignore",
     limit: int | None = None,
 ) -> dict:
     config = load_config(config_path)
@@ -562,6 +575,13 @@ def analyze_candidate_recoverability(
     }
     name_to_id = {name: class_id for class_id, name in id_to_name.items()}
     class_by_name = {spec.name: spec for spec in config.classes}
+    if calibration is None and (
+        relabel_pairs is not None or disagreement_fallback != "ignore"
+    ):
+        raise ValueError(
+            "relabel_pairs and disagreement_fallback require calibration"
+        )
+    relabel_pair_ids = parse_relabel_pairs(relabel_pairs, class_by_name)
     num_classes = max(id_to_name) + 1
     candidate_dir = Path(candidate_dir)
     cam_root = None if cam_dir is None else Path(cam_dir)
@@ -689,6 +709,8 @@ def analyze_candidate_recoverability(
                     cam_class_ids=cam_class_ids,
                     active_class_ids=ordered_active_ids,
                     calibration=calibration,
+                    relabel_pairs=relabel_pair_ids,
+                    disagreement_fallback=disagreement_fallback,
                 )
             )
             for index, quality in quality_by_index.items():
@@ -745,6 +767,8 @@ def analyze_candidate_recoverability(
                 if calibration_path is None
                 else str(Path(calibration_path).resolve())
             ),
+            "relabel_pairs": relabel_pairs,
+            "disagreement_fallback": disagreement_fallback,
             "limit": limit,
         },
         "input_images": len(image_ids),
@@ -840,6 +864,8 @@ def main() -> None:
         candidate_dir=args.candidate_dir,
         cam_dir=args.cam_dir,
         calibration_path=args.calibration,
+        relabel_pairs=args.relabel_pairs,
+        disagreement_fallback=args.disagreement_fallback,
         limit=args.limit,
     )
     output_path = Path(args.output)

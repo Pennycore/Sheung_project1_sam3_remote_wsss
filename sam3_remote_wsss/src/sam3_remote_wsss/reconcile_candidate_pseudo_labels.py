@@ -31,6 +31,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cam-dir", required=True)
     parser.add_argument("--calibration", required=True)
     parser.add_argument("--output-dir", required=True)
+    parser.add_argument(
+        "--relabel-pairs",
+        default=None,
+        help=(
+            "Optional comma-separated source:target class-name allowlist. "
+            "The default permits every active source-target pair."
+        ),
+    )
+    parser.add_argument(
+        "--disagreement-fallback",
+        choices=("ignore", "keep"),
+        default="ignore",
+        help="Action for disagreements that are not confidently relabeled.",
+    )
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--require-all", action="store_true")
     return parser.parse_args()
@@ -42,6 +56,8 @@ def reconcile_assignments(
     cam_class_ids: np.ndarray,
     active_class_ids: list[int],
     calibration: dict,
+    relabel_pairs: set[tuple[int, int]] | None = None,
+    disagreement_fallback: str = "ignore",
 ) -> tuple[list[int | None], dict[str, dict[str, int]]]:
     decisions = reconcile_candidate_decisions(
         candidates=candidates,
@@ -49,6 +65,8 @@ def reconcile_assignments(
         cam_class_ids=cam_class_ids,
         active_class_ids=active_class_ids,
         calibration=calibration,
+        relabel_pairs=relabel_pairs,
+        disagreement_fallback=disagreement_fallback,
     )
     assignments = [decision["assigned_class_id"] for decision in decisions]
     counts: dict[str, Counter] = defaultdict(Counter)
@@ -77,7 +95,13 @@ def reconcile_candidate_decisions(
     cam_class_ids: np.ndarray,
     active_class_ids: list[int],
     calibration: dict,
+    relabel_pairs: set[tuple[int, int]] | None = None,
+    disagreement_fallback: str = "ignore",
 ) -> list[dict]:
+    if disagreement_fallback not in {"ignore", "keep"}:
+        raise ValueError(
+            "disagreement_fallback must be either 'ignore' or 'keep'"
+        )
     cam_method = str(calibration["cam_method"])
     per_source = calibration["per_source"]
     decisions = []
@@ -100,15 +124,34 @@ def reconcile_candidate_decisions(
             else float(cam_decision["predicted_score"] - second_score)
         )
 
+        predicted_class_id = int(cam_decision["predicted_class_id"])
+        pair_is_allowed = relabel_pairs is None or (
+            int(candidate.class_id), predicted_class_id
+        ) in relabel_pairs
         if cam_decision["agrees_with_candidate"]:
             action = "keep"
             assigned_class_id = int(candidate.class_id)
-        elif margin is not None and margin >= threshold:
+            decision_reason = "cam_agreement"
+        elif margin is not None and margin >= threshold and pair_is_allowed:
             action = "relabel"
-            assigned_class_id = int(cam_decision["predicted_class_id"])
+            assigned_class_id = predicted_class_id
+            decision_reason = "confident_allowed_relabel"
+        elif disagreement_fallback == "keep":
+            action = "keep"
+            assigned_class_id = int(candidate.class_id)
+            decision_reason = (
+                "fallback_keep_pair_not_allowed"
+                if margin is not None and margin >= threshold
+                else "fallback_keep_low_confidence"
+            )
         else:
             action = "ignore"
             assigned_class_id = None
+            decision_reason = (
+                "ignore_pair_not_allowed"
+                if margin is not None and margin >= threshold
+                else "ignore_low_confidence"
+            )
 
         decisions.append(
             {
@@ -125,6 +168,7 @@ def reconcile_candidate_decisions(
                 "threshold": threshold,
                 "threshold_source": per_source[source_name]["threshold_source"],
                 "action": action,
+                "decision_reason": decision_reason,
                 "assigned_class_id": assigned_class_id,
             }
         )
@@ -138,6 +182,8 @@ def reconcile_candidate_pseudo_labels(
     cam_dir: str | Path,
     calibration_path: str | Path,
     output_dir: str | Path,
+    relabel_pairs: str | None = None,
+    disagreement_fallback: str = "ignore",
     limit: int | None = None,
 ) -> dict:
     config = load_config(config_path)
@@ -153,6 +199,8 @@ def reconcile_candidate_pseudo_labels(
     output_root = Path(output_dir)
     _prepare_output(output_root)
     class_by_name = {spec.name: spec for spec in config.classes}
+    relabel_pair_ids = parse_relabel_pairs(relabel_pairs, class_by_name)
+    id_to_name = {spec.id: spec.name for spec in config.classes}
 
     skipped = Counter()
     skipped_examples: dict[str, list[str]] = defaultdict(list)
@@ -195,6 +243,8 @@ def reconcile_candidate_pseudo_labels(
             cam_class_ids=cam_class_ids,
             active_class_ids=active_class_ids,
             calibration=calibration,
+            relabel_pairs=relabel_pair_ids,
+            disagreement_fallback=disagreement_fallback,
         )
         label = fuse_candidate_assignments(
             image_shape=image_shape,
@@ -238,13 +288,27 @@ def reconcile_candidate_pseudo_labels(
 
     report = {
         "protocol": {
-            "method": "candidate-reconciliation-v1",
+            "method": (
+                "candidate-reconciliation-v1"
+                if relabel_pair_ids is None
+                and disagreement_fallback == "ignore"
+                else "candidate-reconciliation-selective"
+            ),
             "states": ["keep", "relabel", "ignore"],
             "pixel_gt_used": False,
             "cam_method": calibration["cam_method"],
             "semantic_confidence": "CAM top1 minus top2 margin",
             "thresholds_frozen_from_calibration": True,
             "sam_score_used_for_semantic_confidence": False,
+            "relabel_pairs": (
+                "all"
+                if relabel_pair_ids is None
+                else [
+                    f"{id_to_name[source_id]}->{id_to_name[target_id]}"
+                    for source_id, target_id in sorted(relabel_pair_ids)
+                ]
+            ),
+            "disagreement_fallback": disagreement_fallback,
         },
         "inputs": {
             "config": str(Path(config_path).resolve()),
@@ -293,6 +357,40 @@ def validate_reconciliation_calibration(calibration: dict, config) -> None:
         )
 
 
+def parse_relabel_pairs(
+    value: str | None,
+    class_by_name: dict,
+) -> set[tuple[int, int]] | None:
+    if value is None:
+        return None
+    pairs: set[tuple[int, int]] = set()
+    for raw_pair in value.split(","):
+        raw_pair = raw_pair.strip()
+        if not raw_pair:
+            continue
+        parts = [part.strip() for part in raw_pair.split(":")]
+        if len(parts) != 2 or not all(parts):
+            raise ValueError(
+                "relabel_pairs must use comma-separated source:target names"
+            )
+        source_name, target_name = parts
+        missing = [
+            name
+            for name in (source_name, target_name)
+            if name not in class_by_name
+        ]
+        if missing:
+            raise ValueError(f"Unknown relabel-pair classes: {missing}")
+        source_id = int(class_by_name[source_name].id)
+        target_id = int(class_by_name[target_name].id)
+        if source_id == target_id:
+            raise ValueError(f"Relabel pair must change class: {raw_pair}")
+        pairs.add((source_id, target_id))
+    if not pairs:
+        raise ValueError("relabel_pairs must contain at least one pair")
+    return pairs
+
+
 def _prepare_output(output_dir: Path) -> None:
     artifacts = [
         output_dir / "pseudo_labels",
@@ -326,6 +424,8 @@ def main() -> None:
         cam_dir=args.cam_dir,
         calibration_path=args.calibration,
         output_dir=args.output_dir,
+        relabel_pairs=args.relabel_pairs,
+        disagreement_fallback=args.disagreement_fallback,
         limit=args.limit,
     )
     print(json.dumps({key: value for key, value in report.items() if key != "items"}, indent=2))

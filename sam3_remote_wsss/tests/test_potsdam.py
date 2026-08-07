@@ -25,6 +25,8 @@ from sam3_remote_wsss.config import (
 from sam3_remote_wsss.evaluate_pseudo_labels import (
     compute_evaluation_metrics,
     main as evaluate_main,
+    parent_image_id as evaluation_parent_image_id,
+    summarize_parent_metrics,
 )
 from sam3_remote_wsss.evaluate_student import PatchRecord, stitch_parent
 from sam3_remote_wsss.fusion import FusionCanvas
@@ -465,6 +467,36 @@ class PseudoLabelPolicyTests(unittest.TestCase):
         self.assertAlmostEqual(metrics["labeled_oa"], 1.0)
         self.assertEqual(metrics["labeled_coverage"], 0.5)
         self.assertEqual(metrics["per_class_labeled_coverage"]["foreground"], 1 / 3)
+
+    def test_parent_metric_summary_is_unweighted(self) -> None:
+        first = {
+            metric: 0.2
+            for metric in (
+                "miou",
+                "mf1",
+                "oa",
+                "foreground_miou",
+                "foreground_mf1",
+                "labeled_miou",
+                "labeled_mf1",
+                "labeled_oa",
+                "labeled_coverage",
+            )
+        }
+        second = {metric: 0.4 for metric in first}
+        second["labeled_oa"] = None
+
+        summary = summarize_parent_metrics({"first": first, "second": second})
+
+        self.assertAlmostEqual(summary["miou"]["mean"], 0.3)
+        self.assertAlmostEqual(summary["miou"]["std"], 0.1)
+        self.assertEqual(summary["miou"]["count"], 2)
+        self.assertAlmostEqual(summary["labeled_oa"]["mean"], 0.2)
+        self.assertEqual(summary["labeled_oa"]["count"], 1)
+        self.assertEqual(
+            evaluation_parent_image_id("top_potsdam_2_11_x0384_y0768"),
+            "top_potsdam_2_11",
+        )
 
 
 class CAMFusionTests(unittest.TestCase):

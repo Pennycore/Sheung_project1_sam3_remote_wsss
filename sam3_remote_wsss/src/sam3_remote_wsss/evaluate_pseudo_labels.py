@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 import numpy as np
@@ -10,6 +11,20 @@ from tqdm import tqdm
 
 from .config import load_config
 from .potsdam import discover_potsdam_items, label_rgb_to_ids, read_label_rgb
+
+
+_PATCH_SUFFIX = re.compile(r"_x\d+_y\d+$")
+_PARENT_SUMMARY_METRICS = (
+    "miou",
+    "mf1",
+    "oa",
+    "foreground_miou",
+    "foreground_mf1",
+    "labeled_miou",
+    "labeled_mf1",
+    "labeled_oa",
+    "labeled_coverage",
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -38,6 +53,10 @@ def main() -> None:
     confusion = np.zeros((num_classes, num_classes), dtype=np.int64)
     gt_pixel_count = np.zeros(num_classes, dtype=np.int64)
     labeled_gt_pixel_count = np.zeros(num_classes, dtype=np.int64)
+    parent_confusion: dict[str, np.ndarray] = {}
+    parent_gt_pixel_count: dict[str, np.ndarray] = {}
+    parent_labeled_gt_pixel_count: dict[str, np.ndarray] = {}
+    parent_evaluated_images: dict[str, int] = {}
     evaluated = 0
     skipped = {
         "missing_item": 0,
@@ -72,10 +91,30 @@ def main() -> None:
         if not np.any(valid_gt):
             record_skip("no_valid_gt", pseudo_path.stem)
             continue
-        gt_pixel_count += np.bincount(gt[valid_gt], minlength=num_classes)
+        image_gt_count = np.bincount(gt[valid_gt], minlength=num_classes)
+        gt_pixel_count += image_gt_count
 
         labeled = valid_gt & (pred != config.ignore_index) & (pred < num_classes)
-        labeled_gt_pixel_count += np.bincount(gt[labeled], minlength=num_classes)
+        image_labeled_gt_count = np.bincount(gt[labeled], minlength=num_classes)
+        labeled_gt_pixel_count += image_labeled_gt_count
+        parent_id = parent_image_id(pseudo_path.stem)
+        if parent_id not in parent_confusion:
+            parent_confusion[parent_id] = np.zeros(
+                (num_classes, num_classes),
+                dtype=np.int64,
+            )
+            parent_gt_pixel_count[parent_id] = np.zeros(
+                num_classes,
+                dtype=np.int64,
+            )
+            parent_labeled_gt_pixel_count[parent_id] = np.zeros(
+                num_classes,
+                dtype=np.int64,
+            )
+            parent_evaluated_images[parent_id] = 0
+        parent_gt_pixel_count[parent_id] += image_gt_count
+        parent_labeled_gt_pixel_count[parent_id] += image_labeled_gt_count
+        parent_evaluated_images[parent_id] += 1
         evaluated += 1
         if not np.any(labeled):
             continue
@@ -83,7 +122,9 @@ def main() -> None:
             num_classes * gt[labeled].astype(np.int64) + pred[labeled].astype(np.int64),
             minlength=num_classes * num_classes,
         )
-        confusion += bincount.reshape(num_classes, num_classes)
+        image_confusion = bincount.reshape(num_classes, num_classes)
+        confusion += image_confusion
+        parent_confusion[parent_id] += image_confusion
 
     metrics = compute_evaluation_metrics(
         confusion,
@@ -97,6 +138,25 @@ def main() -> None:
     metrics["skipped_images"] = skipped_total
     metrics["skipped_reasons"] = skipped
     metrics["skipped_examples"] = skipped_examples
+    per_parent = {
+        parent_id: {
+            **compute_evaluation_metrics(
+                parent_confusion[parent_id],
+                parent_gt_pixel_count[parent_id],
+                parent_labeled_gt_pixel_count[parent_id],
+                config,
+            ),
+            "evaluated_images": parent_evaluated_images[parent_id],
+        }
+        for parent_id in sorted(parent_confusion)
+    }
+    metrics["evaluated_parents"] = len(per_parent)
+    metrics["parent_macro_protocol"] = (
+        "Unweighted arithmetic mean over parent-image metrics; "
+        "std uses the population definition (ddof=0)."
+    )
+    metrics["parent_macro"] = summarize_parent_metrics(per_parent)
+    metrics["per_parent"] = per_parent
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
@@ -163,6 +223,28 @@ def compute_iou(
         "oa": oa,
         "pixel_accuracy": oa,
     }
+
+
+def parent_image_id(image_id: str) -> str:
+    return _PATCH_SUFFIX.sub("", image_id)
+
+
+def summarize_parent_metrics(per_parent: dict[str, dict]) -> dict:
+    summary = {}
+    for metric_name in _PARENT_SUMMARY_METRICS:
+        values = [
+            float(metrics[metric_name])
+            for metrics in per_parent.values()
+            if metrics.get(metric_name) is not None
+        ]
+        summary[metric_name] = {
+            "mean": None if not values else float(np.mean(values)),
+            "std": None if not values else float(np.std(values)),
+            "min": None if not values else float(np.min(values)),
+            "max": None if not values else float(np.max(values)),
+            "count": len(values),
+        }
+    return summary
 
 
 def compute_evaluation_metrics(

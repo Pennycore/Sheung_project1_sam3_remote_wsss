@@ -49,6 +49,31 @@ CAM 候选复核已完成。top20 的过滤后主导正确率/像素加权纯度
 这两类。新增无 GT 的 `rebuild_candidate_pseudo_labels`，下一步离线重建 baseline、all-class
 mean 和 selective mean 三组完整伪标签并比较 mIoU/mF1/OA，不立即训练 student。
 
+固定256-patch重建评估已完成。baseline/all-class/selective mean 的 mIoU 为
+`0.3800/0.3397/0.3922`，mF1 为 `0.4912/0.4590/0.5028`，OA 为
+`0.4713/0.4028/0.4670`，coverage 为 `0.6063/0.4717/0.5437`。全类别过滤失败；选择性
+过滤将 mIoU/mF1/foreground mIoU 提高 `0.0122/0.0116/0.0147`，但 OA/coverage 下降
+`0.0043/0.0627`。下一步在父图互斥 validation 子集原样复现该规则，不再使用当前训练子集
+GT 调整类别或参数。
+
+父图互斥 validation 机制子集已冻结为 `data/candidate_validation_256.csv`：共256个 patch，
+覆盖全部6张 validation 父图，每张42或43个；五类正样本数为 `221/193/249/230/110`。
+下一步用冻结的训练 CAM checkpoint 和 Manual4 在该CSV上生成 CAM 与SAM3候选，随后只比较
+baseline 和既定 selective mean 规则。
+
+validation 256 的 CAM 与 Manual4 候选缓存已完整生成，共2,540个候选；score/面积中位数为
+`0.7149/3188.5`，与训练诊断子集接近。下一步执行无 GT baseline/selective mean 重建并用
+validation GT 一次性比较 mIoU/mF1/OA，不再生成新的规则分支。
+
+validation 的最后一次2x2类别分解已经完成。baseline、impervious-only、low-vegetation-only、
+两类联合的 mIoU 为 `0.3494/0.3629/0.3474/0.3609`，mF1 为
+`0.4599/0.4733/0.4575/0.4710`。impervious-only 是唯一同时提高 mIoU、mF1 及两项前景指标
+的规则，增量分别为 `+0.0135/+0.0134/+0.0162/+0.0161`；low-vegetation-only 的 mIoU/mF1
+反而下降 `0.0020/0.0024`。最终候选校正规则冻结为 `mean CAM + impervious_surface-only
+reject`，停止类别组合搜索。它的代价是 OA 从 `0.3935` 降至 `0.3795`、coverage 从
+`0.5336` 降至 `0.4421`，论文中必须同时报告。下一步先按六张 validation 父图检查逐图增益和
+父图宏平均稳定性，通过后才扩展到完整4,352训练 patch。
+
 ## 2. 已经完成
 
 - 已实现 Potsdam 数据读取和像素标签到 image-level CSV 的转换。

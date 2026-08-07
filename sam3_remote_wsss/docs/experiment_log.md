@@ -1284,6 +1284,88 @@ low vegetation 执行 CAM/SAM3 不一致拒绝。该选择仍是固定训练子�
 三组结果，统一比较 mIoU/mF1/OA、前景指标、逐类 IoU/F1 与 coverage；在这一机制检查完成前
 不训练新 student。
 
+三组完整伪标签评估已完成：
+
+| 规则 | mIoU | mF1 | OA | foreground mIoU | foreground mF1 | labeled mIoU | labeled mF1 | labeled OA | coverage |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| candidate baseline | 0.3800 | 0.4912 | 0.4713 | 0.4560 | 0.5895 | 0.5145 | 0.6219 | 0.7773 | 0.6063 |
+| all-class mean reject | 0.3397 | 0.4590 | 0.4028 | 0.4076 | 0.5508 | 0.5951 | 0.6838 | 0.8539 | 0.4717 |
+| selective mean reject | **0.3922** | **0.5028** | 0.4670 | **0.4707** | **0.6034** | 0.5894 | 0.6821 | **0.8589** | 0.5437 |
+
+全类别过滤虽然显著提高 labeled-only 指标，但 coverage 下降 `0.1346`，严格 mIoU/mF1/OA
+分别下降 `0.0403/0.0322/0.0685`，因此该规则正式判定失败。选择性 mean 过滤相对 baseline
+的严格 mIoU/mF1/foreground mIoU/foreground mF1 分别提高
+`0.0122/0.0116/0.0147/0.0139`，labeled mIoU/mF1/OA 提高
+`0.0750/0.0602/0.0816`；但 OA 下降 `0.0043`、coverage 下降 `0.0627`。
+
+选择性规则的 strict class IoU 相对 baseline 变化为：impervious surface `+0.0507`、building
+`+0.0147`、low vegetation `+0.0160`、tree `+0.0001`、car `-0.0083`，background 均为0。
+这证明“只过滤语义脆弱类别”优于全类别统一过滤，并在固定训练子集上通过机制检查；但它仍是
+训练 GT 上的探索结果。下一步必须在六张父图互斥 validation 集中建立固定子集、重新生成
+SAM3 候选和对应 CAM，再原样应用 baseline/selective mean 两条规则。validation 规则冻结前
+不扩展到完整训练候选，也不训练新 student。
+
+已冻结父图互斥 validation 机制验证子集 `data/candidate_validation_256.csv`。它从正式
+`image_level_labels_val.csv` 确定性、父图均衡并在父图内均匀抽取 256 个512x512 patch，覆盖
+全部6张 validation 父图：`top_potsdam_2_11/2_12/4_10/5_11` 各43个，
+`top_potsdam_6_7/7_8` 各42个。正类 patch 数为 impervious surface/building/low vegetation/
+tree/car = `221/193/249/230/110`。该CSV已经冻结；后续不根据生成结果替换 patch。下一步用
+训练集上冻结的 CAM checkpoint 和 Manual4 生成该子集的 CAM 与逐候选缓存，再原样比较
+candidate baseline 和 selective mean reject。validation GT 只用于最终 mIoU/mF1/OA 评估。
+
+validation 256 的冻结 CAM 与 Manual4 SAM3 候选已生成完成。候选缓存覆盖全部256张图，共
+`2,540` 个候选、压缩体积 `2,438,775` bytes；impervious surface/building/low vegetation/
+tree/car 候选数为 `578/218/257/201/1286`，至少产生候选的图像数为
+`204/106/113/67/104`。SAM score 中位数为 `0.7149`，候选面积中位数为 `3,188.5` 像素，
+与训练诊断子集的 `0.7164/3,294` 接近。提示响应结构也保持一致：low vegetation 的257个
+候选中 `grass` 占234个；car 三条有效提示产生 `449/432/405` 个候选。未观察到明显候选分布
+偏移。下一步只重建 validation baseline 与已经冻结的 selective mean reject，并统一评估
+mIoU/mF1/OA；不再运行已在训练机制子集判定失败的 all-class 规则。
+
+父图互斥 validation 256 的 baseline 与冻结 selective mean 评估已完成：
+
+| 规则 | mIoU | mF1 | OA | foreground mIoU | foreground mF1 | labeled mIoU | labeled mF1 | coverage |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| validation baseline | 0.3494 | 0.4599 | **0.3935** | 0.4193 | 0.5518 | 0.4961 | 0.6032 | **0.5336** |
+| selective mean reject | **0.3609** | **0.4710** | 0.3731 | **0.4331** | **0.5652** | **0.6093** | **0.6963** | 0.4295 |
+
+选择性规则在父图互斥 validation 上复现了训练机制子集的总体方向：mIoU/mF1/foreground
+mIoU/foreground mF1 分别提高 `0.0115/0.0112/0.0139/0.0134`，labeled mIoU/mF1/OA
+提高 `0.1133/0.0931/0.1311`；但严格 OA 下降 `0.0204`，coverage 下降 `0.1041`。
+
+逐类 IoU 变化为 background `0`、impervious surface `+0.0631`、building `+0.0009`、
+low vegetation `-0.0008`、tree `+0.0070`、car `-0.0009`。这说明总体收益在独立父图上稳定，
+但几乎全部直接来自 impervious surface；low vegetation 拒绝没有通过 validation，并可能是
+额外 coverage 损失的重要来源。下一步只补最后一个预先可解释的2x2类别分解：baseline、
+impervious-only、low-vegetation-only、两类联合。根据 validation mIoU/mF1/OA/coverage 冻结
+最终规则后停止类别搜索，不再增加其他组合。
+
+最后一次2x2类别分解已经完成：
+
+| 规则 | mIoU | mF1 | OA | foreground mIoU | foreground mF1 | coverage | kept | rejected |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| baseline | 0.3494 | 0.4599 | **0.3935** | 0.4193 | 0.5518 | **0.5336** | 2,540 | 0 |
+| impervious-only | **0.3629** | **0.4733** | 0.3795 | **0.4355** | **0.5679** | 0.4421 | 2,376 | 164 |
+| low-vegetation-only | 0.3474 | 0.4575 | 0.3872 | 0.4168 | 0.5489 | 0.5211 | 2,483 | 57 |
+| impervious + low vegetation | 0.3609 | 0.4710 | 0.3731 | 0.4331 | 0.5652 | 0.4295 | 2,319 | 221 |
+
+impervious-only 相对 baseline 的 mIoU/mF1/foreground mIoU/foreground mF1 分别提高
+`0.0135/0.0134/0.0162/0.0161`，其中 impervious surface IoU 提高 `0.0638`，同时
+low vegetation IoU 还提高 `0.0168`。其他类别变化均不超过 `0.0009`。代价是 OA 下降
+`0.0140`、coverage 下降 `0.0915`。这表明该规则在当前严格指标目标下有效，但不是无代价的
+全面改进。
+
+low-vegetation-only 相对 baseline 的 mIoU/mF1/foreground mIoU 分别下降
+`0.0020/0.0024/0.0024`，目标类别 IoU 下降 `0.0179`；它删除的57个候选中包含过多有用区域。
+两类联合也弱于 impervious-only，并进一步损失 OA 和 coverage。至此类别组合搜索正式停止，
+最终候选校正规则冻结为 `mean CAM + impervious_surface-only reject`。下一步不再调整规则，
+只按六张 validation 父图检查逐图 mIoU/mF1/OA 和不加权父图均值/标准差，防止总体收益由单个
+空间区域主导；通过后再为完整4,352训练 patch 生成候选缓存。
+
+为支持该检查，`evaluate_pseudo_labels` 新增 `per_parent`、`evaluated_parents` 和
+`parent_macro`。父图由 patch ID 的 `_xNNNN_yNNNN` 后缀识别；`parent_macro` 对各父图指标做
+不按像素量加权的算术平均，并报告总体标准差（`ddof=0`）。原有全局像素汇总指标保持不变。
+
 指标报告规范同步更新：后续所有完整像素预测必须至少报告六类 `mIoU`、六类宏平均 `mF1`
 和 `OA`，并附逐类 IoU/F1 及前景宏平均。已有 `pixel_accuracy` 与 `OA` 数值相同，继续保留用于
 兼容历史 JSON。带 `255` 的伪标签同时报告 strict 和 labeled-only 指标及 coverage；候选级

@@ -20,6 +20,10 @@ from .potsdam import (
     read_label_rgb,
 )
 from .rebuild_candidate_pseudo_labels import fuse_candidate_assignments
+from .reconcile_candidate_pseudo_labels import (
+    reconcile_candidate_decisions,
+    validate_reconciliation_calibration,
+)
 
 
 POLICIES = ("baseline", "oracle_reject", "oracle_relabel")
@@ -50,6 +54,14 @@ def parse_args() -> argparse.Namespace:
         "--cam-dir",
         default=None,
         help="Optional CAM NPZ directory for confusion-pair correction analysis.",
+    )
+    parser.add_argument(
+        "--calibration",
+        default=None,
+        help=(
+            "Optional frozen reconciliation calibration. When supplied, report "
+            "GT-only action audits for Keep/Relabel/Ignore decisions."
+        ),
     )
     parser.add_argument("--output", required=True)
     parser.add_argument("--limit", type=int, default=None)
@@ -397,14 +409,147 @@ def summarize_cam_pairs(records: list[dict], id_to_name: dict[int, str]) -> dict
     return methods
 
 
+def summarize_reconciliation_audit(
+    records: list[dict],
+    id_to_name: dict[int, str],
+) -> dict:
+    by_source: dict[str, list[dict]] = defaultdict(list)
+    by_relabel_pair: dict[str, list[dict]] = defaultdict(list)
+    for record in records:
+        source_name = str(record["source_class_name"])
+        by_source[source_name].append(record)
+        if record["action"] == "relabel":
+            target_name = id_to_name[int(record["assigned_class_id"])]
+            by_relabel_pair[f"{source_name}->{target_name}"].append(record)
+
+    return {
+        "definition": {
+            "gt_role": (
+                "offline action audit only; GT is not used by calibration or "
+                "reconciliation"
+            ),
+            "assigned_dominant_match_rate": (
+                "fraction of non-ignored candidates whose assigned class equals "
+                "the candidate mask's dominant GT class"
+            ),
+            "pixel_weighted_assigned_purity": (
+                "assigned-class GT pixels divided by all valid candidate pixels"
+            ),
+            "beneficial_relabel_rate": (
+                "fraction of relabels that change a wrong source to dominant GT"
+            ),
+            "destructive_relabel_rate": (
+                "fraction of relabels that change a dominant source to a wrong class"
+            ),
+        },
+        "candidates_with_valid_gt": len(records),
+        "overall": _summarize_reconciliation_group(records, id_to_name),
+        "per_source": {
+            name: _summarize_reconciliation_group(group, id_to_name)
+            for name, group in sorted(by_source.items())
+        },
+        "relabel_pairs": {
+            name: _summarize_reconciliation_group(group, id_to_name)
+            for name, group in sorted(by_relabel_pair.items())
+        },
+    }
+
+
+def _summarize_reconciliation_group(
+    records: list[dict],
+    id_to_name: dict[int, str],
+) -> dict:
+    actions = Counter(str(record["action"]) for record in records)
+    assigned = [record for record in records if record["action"] != "ignore"]
+    kept = [record for record in records if record["action"] == "keep"]
+    relabeled = [record for record in records if record["action"] == "relabel"]
+    ignored = [record for record in records if record["action"] == "ignore"]
+
+    def assigned_is_dominant(record: dict) -> bool:
+        return int(record["assigned_class_id"]) == int(
+            record["dominant_class_id"]
+        )
+
+    def assigned_pixels(record: dict) -> int:
+        assigned_name = id_to_name[int(record["assigned_class_id"])]
+        return int(record["gt_distribution"].get(assigned_name, 0))
+
+    beneficial = [
+        record
+        for record in relabeled
+        if not record["expected_is_dominant"] and assigned_is_dominant(record)
+    ]
+    destructive = [
+        record for record in relabeled if record["expected_is_dominant"]
+    ]
+    unresolved = [
+        record
+        for record in relabeled
+        if not record["expected_is_dominant"]
+        and not assigned_is_dominant(record)
+    ]
+
+    return {
+        "candidates": len(records),
+        "actions": dict(sorted(actions.items())),
+        "assigned_dominant_match_rate": _ratio(
+            sum(assigned_is_dominant(record) for record in assigned),
+            len(assigned),
+        ),
+        "pixel_weighted_assigned_purity": _ratio(
+            sum(assigned_pixels(record) for record in assigned),
+            sum(int(record["valid_pixels"]) for record in assigned),
+        ),
+        "kept_dominant_match_rate": _ratio(
+            sum(bool(record["expected_is_dominant"]) for record in kept),
+            len(kept),
+        ),
+        "relabeled_dominant_match_rate": _ratio(
+            sum(assigned_is_dominant(record) for record in relabeled),
+            len(relabeled),
+        ),
+        "relabeled_pixel_weighted_purity": _ratio(
+            sum(assigned_pixels(record) for record in relabeled),
+            sum(int(record["valid_pixels"]) for record in relabeled),
+        ),
+        "beneficial_relabels": len(beneficial),
+        "beneficial_relabel_rate": _ratio(len(beneficial), len(relabeled)),
+        "destructive_relabels": len(destructive),
+        "destructive_relabel_rate": _ratio(len(destructive), len(relabeled)),
+        "unresolved_relabels": len(unresolved),
+        "unresolved_relabel_rate": _ratio(len(unresolved), len(relabeled)),
+        "ignored_source_dominant_rate": _ratio(
+            sum(bool(record["expected_is_dominant"]) for record in ignored),
+            len(ignored),
+        ),
+        "ignored_pixel_weighted_source_purity": _ratio(
+            sum(int(record["expected_pixels"]) for record in ignored),
+            sum(int(record["valid_pixels"]) for record in ignored),
+        ),
+        "relabel_margin_percentiles": _percentiles(
+            [record["margin"] for record in relabeled]
+        ),
+        "ignore_margin_percentiles": _percentiles(
+            [record["margin"] for record in ignored]
+        ),
+    }
+
+
 def analyze_candidate_recoverability(
     config_path: str | Path,
     labels_csv: str | Path,
     candidate_dir: str | Path,
     cam_dir: str | Path | None = None,
+    calibration_path: str | Path | None = None,
     limit: int | None = None,
 ) -> dict:
     config = load_config(config_path)
+    calibration = None
+    if calibration_path is not None:
+        calibration = json.loads(Path(calibration_path).read_text(encoding="utf-8"))
+        validate_reconciliation_calibration(calibration, config)
+        if cam_dir is None:
+            raise ValueError("calibration requires cam_dir for action auditing")
     image_level = read_image_level_csv(labels_csv)
     image_ids = sorted(image_level)
     if limit is not None:
@@ -430,6 +575,7 @@ def analyze_candidate_recoverability(
     pixel_confusion = np.zeros((num_classes, num_classes), dtype=np.int64)
     action_counts = {policy: Counter() for policy in POLICIES}
     cam_records: list[dict] = []
+    reconciliation_records: list[dict] = []
     skipped = Counter()
     skipped_examples: dict[str, list[str]] = defaultdict(list)
     candidates_without_valid_gt = 0
@@ -534,6 +680,17 @@ def analyze_candidate_recoverability(
                     f"cams={cams.shape}, gt={gt.shape}"
                 )
             ordered_active_ids = sorted(active_class_ids)
+            reconciliation_decisions = (
+                None
+                if calibration is None
+                else reconcile_candidate_decisions(
+                    candidates=candidates,
+                    cams=cams,
+                    cam_class_ids=cam_class_ids,
+                    active_class_ids=ordered_active_ids,
+                    calibration=calibration,
+                )
+            )
             for index, quality in quality_by_index.items():
                 quality = dict(quality)
                 quality["cam"] = score_candidate_cams(
@@ -543,6 +700,10 @@ def analyze_candidate_recoverability(
                     active_class_ids=ordered_active_ids,
                 )
                 cam_records.append(quality)
+                if reconciliation_decisions is not None:
+                    reconciliation_records.append(
+                        {**quality, **reconciliation_decisions[index]}
+                    )
         evaluated_images += 1
 
     policy_metrics = {
@@ -579,6 +740,11 @@ def analyze_candidate_recoverability(
             "labels_csv": str(Path(labels_csv).resolve()),
             "candidate_dir": str(candidate_dir.resolve()),
             "cam_dir": None if cam_root is None else str(cam_root.resolve()),
+            "calibration": (
+                None
+                if calibration_path is None
+                else str(Path(calibration_path).resolve())
+            ),
             "limit": limit,
         },
         "input_images": len(image_ids),
@@ -611,6 +777,14 @@ def analyze_candidate_recoverability(
         ),
         "cam_confusion_pair_recoverability": (
             None if cam_root is None else summarize_cam_pairs(cam_records, id_to_name)
+        ),
+        "candidate_reconciliation_audit": (
+            None
+            if calibration is None
+            else summarize_reconciliation_audit(
+                reconciliation_records,
+                id_to_name,
+            )
         ),
     }
     return report
@@ -665,6 +839,7 @@ def main() -> None:
         labels_csv=args.labels_csv,
         candidate_dir=args.candidate_dir,
         cam_dir=args.cam_dir,
+        calibration_path=args.calibration,
         limit=args.limit,
     )
     output_path = Path(args.output)

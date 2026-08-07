@@ -14,11 +14,42 @@ from sam3_remote_wsss.analyze_candidate_recoverability import (
     candidate_coverage_counts,
     finalize_coverage,
     oracle_assignments,
+    summarize_reconciliation_audit,
 )
 from sam3_remote_wsss.candidate_cache import CandidateMask, save_candidate_cache
 
 
 class CandidateRecoverabilityTests(unittest.TestCase):
+    def test_reconciliation_audit_separates_helpful_and_harmful_actions(self) -> None:
+        records = [
+            self._audit_record(
+                source_id=1,
+                dominant_id=2,
+                assigned_id=2,
+                action="relabel",
+            ),
+            self._audit_record(
+                source_id=1,
+                dominant_id=1,
+                assigned_id=2,
+                action="relabel",
+            ),
+            self._audit_record(
+                source_id=1,
+                dominant_id=1,
+                assigned_id=None,
+                action="ignore",
+            ),
+        ]
+        audit = summarize_reconciliation_audit(
+            records,
+            {0: "background", 1: "surface", 2: "building"},
+        )["overall"]
+
+        self.assertEqual(audit["beneficial_relabel_rate"], 0.5)
+        self.assertEqual(audit["destructive_relabel_rate"], 0.5)
+        self.assertEqual(audit["ignored_source_dominant_rate"], 1.0)
+
     def test_oracle_relabel_recovers_semantically_wrong_geometry(self) -> None:
         candidates = [
             self._candidate(class_id=1, class_name="surface", right=False),
@@ -165,12 +196,36 @@ class CandidateRecoverabilityTests(unittest.TestCase):
                 cams=cams,
                 class_ids=np.asarray([1, 2], dtype=np.int64),
             )
+            calibration_path = root / "calibration.json"
+            calibration_path.write_text(
+                json.dumps(
+                    {
+                        "format_version": 1,
+                        "protocol": {"pixel_gt_used": False},
+                        "cam_method": "mean",
+                        "per_source": {
+                            "surface": {
+                                "class_id": 1,
+                                "threshold": 0.5,
+                                "threshold_source": "test",
+                            },
+                            "building": {
+                                "class_id": 2,
+                                "threshold": 0.5,
+                                "threshold_source": "test",
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
 
             report = analyze_candidate_recoverability(
                 config_path=config_path,
                 labels_csv=labels_csv,
                 candidate_dir=candidate_dir,
                 cam_dir=cam_dir,
+                calibration_path=calibration_path,
             )
 
             self.assertEqual(report["evaluated_images"], 1)
@@ -206,6 +261,10 @@ class CandidateRecoverabilityTests(unittest.TestCase):
             ]["surface->building"]
             self.assertEqual(pair["candidates"], 1)
             self.assertEqual(pair["cam_correction_rate"], 1.0)
+            audit = report["candidate_reconciliation_audit"]["overall"]
+            self.assertEqual(audit["actions"], {"keep": 1, "relabel": 1})
+            self.assertEqual(audit["beneficial_relabel_rate"], 1.0)
+            self.assertEqual(audit["destructive_relabel_rate"], 0.0)
 
     @staticmethod
     def _candidate(
@@ -225,6 +284,31 @@ class CandidateRecoverabilityTests(unittest.TestCase):
             score=0.8,
             mask=mask,
         )
+
+    @staticmethod
+    def _audit_record(
+        source_id: int,
+        dominant_id: int,
+        assigned_id: int | None,
+        action: str,
+    ) -> dict:
+        source_name = "surface" if source_id == 1 else "building"
+        dominant_name = "surface" if dominant_id == 1 else "building"
+        return {
+            "source_class_id": source_id,
+            "source_class_name": source_name,
+            "assigned_class_id": assigned_id,
+            "action": action,
+            "dominant_class_id": dominant_id,
+            "expected_is_dominant": source_id == dominant_id,
+            "expected_pixels": 8 if source_id == dominant_id else 2,
+            "valid_pixels": 10,
+            "gt_distribution": {
+                source_name: 8 if source_id == dominant_id else 2,
+                dominant_name: 8,
+            },
+            "margin": 0.8 if action == "relabel" else 0.1,
+        }
 
 
 if __name__ == "__main__":

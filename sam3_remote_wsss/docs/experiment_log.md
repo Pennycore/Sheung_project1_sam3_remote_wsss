@@ -1422,6 +1422,22 @@ source class 两分量 GMM 校准；类别样本不足、分量权重过低或�
 读取 pixel GT；校准 JSON 显式记录 `pixel_gt_used=false`，重建 summary 记录校准文件 SHA-256、
 逐类动作计数与跳过原因。验证 GT 只允许在输出伪标签后的独立评估命令中读取。
 
+Train256 自动校准得到五个逐 source class GMM 阈值：impervious `0.0475`、building
+`0.0374`、low vegetation `0.1097`、tree `0.1420`、car `0.0435`；无类别使用全局回退。
+冻结后应用 Validation256，共2,540候选，Keep/Relabel/Ignore=`1690/341/509`。V1 的
+mIoU/mF1/OA/foreground mIoU/coverage 为 `0.3133/0.4370/0.3618/0.3760/0.4414`，相对
+baseline 分别变化 `-0.0361/-0.0229/-0.0317/-0.0433/-0.0922`，因此 V1 判定失败，不进入
+student 训练。labeled mIoU 从 baseline `0.4961` 提高到 `0.5466`，说明筛选提高局部纯度，
+但无法抵消覆盖损失和错误重标。
+
+同一 Validation256 的 Oracle Reject/Relabel mIoU 为 `0.3885/0.4328`，Relabel 相对 Reject
+提高 `+0.0443 mIoU/+0.0533 mF1/+0.0739 OA` 并恢复 `+0.0923 coverage`；宏/微 recoverable
+gap 为 `0.1066/0.1289`，与 Train256 一致。由此排除“Oracle 上限不迁移”，确认失败点是
+CAM margin 与语义正确性之间缺少可靠对应。car 占 V1 Relabel 的 `224/341`，但 validation
+`car->tree` CAM 纠正率仅 `0.1295`；高 margin 也可对应错误目标，单变量 GMM 不足以充当
+语义置信度。新增冻结策略动作审计，报告 assigned purity、有益/破坏性 Relabel、Ignore 删除
+正确 source 的比例及逐 source-to-target 结果，作为 V2 设计依据；该审计不修改 calibration。
+
 指标报告规范同步更新：后续所有完整像素预测必须至少报告六类 `mIoU`、六类宏平均 `mF1`
 和 `OA`，并附逐类 IoU/F1 及前景宏平均。已有 `pixel_accuracy` 与 `OA` 数值相同，继续保留用于
 兼容历史 JSON。带 `255` 的伪标签同时报告 strict 和 labeled-only 指标及 coverage；候选级

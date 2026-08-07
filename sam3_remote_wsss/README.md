@@ -231,6 +231,7 @@ python -m sam3_remote_wsss.analyze_candidate_recoverability \
   --labels-csv data/prompt_ablation_256.csv \
   --candidate-dir runs/manual4_candidates_256_v2/candidates \
   --cam-dir runs/cam_resnet50_full_repaired/cams_train \
+  --calibration runs/candidate_reconciliation_v1/calibration_train256.json \
   --output runs/manual4_candidates_256_v2/candidate_recoverability.json \
   --require-all
 ```
@@ -258,7 +259,11 @@ and image-label-constrained Oracle Relabel pseudo-label metrics; geometric and
 semantic recall; their recoverable semantic gap; candidate-count and
 pixel-area-weighted SAM-to-GT confusion; and CAM correction rates for each
 foreground confusion pair. Pixel GT is diagnostic-only and is never exported
-as a pseudo label or used to calibrate a production threshold.
+as a pseudo label or used to calibrate a production threshold. When a frozen
+`--calibration` is supplied, it also audits Keep/Relabel/Ignore actions,
+including beneficial and destructive relabel rates, ignored-source accuracy,
+and source-to-target relabel-pair quality. This remains an offline GT-only
+diagnostic and never changes the frozen calibration.
 
 After freezing a reject-only policy, pseudo labels can be rebuilt without
 running SAM3 again:

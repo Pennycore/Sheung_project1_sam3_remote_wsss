@@ -113,6 +113,15 @@ Candidate Reconciliation V1 已实现为两个严格分离的阶段。训练校�
 `pixel_gt_used=false`。下一步先在 Train256 生成并冻结 calibration JSON，检查自动阈值后
 原样应用到 Validation256，最终统一报告 mIoU、mF1、OA、前景指标和 coverage。
 
+V1 已在 Validation256 原样运行，但未通过：mIoU/mF1/OA 从 baseline 的
+`0.3494/0.4599/0.3935` 降至 `0.3133/0.4370/0.3618`，foreground mIoU 从 `0.4193`
+降至 `0.3760`，coverage 从 `0.5336` 降至 `0.4414`。虽然 labeled mIoU 提高到
+`0.5466`，但509个 Ignore 和341个 Relabel 造成过度稀疏及语义破坏。Oracle Relabel 在同一
+Validation256 仍达到 `0.4328 mIoU/0.5471 mF1/0.4710 OA`，比 baseline 高约
+`+0.0834/+0.0872/+0.0775`，且 recoverable gap 与 Train256 一致，因此失败来自 CAM margin
+校准而非候选几何上限。代码现支持用冻结 calibration 做离线 GT 动作审计；下一步先量化逐类
+有益/破坏性 Relabel 和 Ignore 误删率，不训练 student，也不据 validation GT 重拟合阈值。
+
 ## 2. 已经完成
 
 - 已实现 Potsdam 数据读取和像素标签到 image-level CSV 的转换。

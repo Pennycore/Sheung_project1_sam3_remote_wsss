@@ -43,46 +43,92 @@ def reconcile_assignments(
     active_class_ids: list[int],
     calibration: dict,
 ) -> tuple[list[int | None], dict[str, dict[str, int]]]:
-    cam_method = str(calibration["cam_method"])
-    per_source = calibration["per_source"]
-    assignments: list[int | None] = []
+    decisions = reconcile_candidate_decisions(
+        candidates=candidates,
+        cams=cams,
+        cam_class_ids=cam_class_ids,
+        active_class_ids=active_class_ids,
+        calibration=calibration,
+    )
+    assignments = [decision["assigned_class_id"] for decision in decisions]
     counts: dict[str, Counter] = defaultdict(Counter)
-
-    for candidate in candidates:
-        source_name = str(candidate.class_name)
-        if source_name not in per_source:
-            raise ValueError(f"Calibration missing source class: {source_name}")
-        decision = score_candidate_cams(
-            candidate=candidate,
-            cams=cams,
-            cam_class_ids=cam_class_ids,
-            active_class_ids=active_class_ids,
-        )[cam_method]
-        bucket = counts[source_name]
+    for decision in decisions:
+        bucket = counts[decision["source_class_name"]]
         bucket["candidates"] += 1
-        if decision["agrees_with_candidate"]:
-            assignments.append(int(candidate.class_id))
+        action = decision["action"]
+        if action == "keep":
             bucket["kept"] += 1
-            continue
-
-        second_score = decision.get("second_score")
-        if second_score is None:
-            assignments.append(None)
-            bucket["ignored_no_margin"] += 1
-            continue
-        margin = float(decision["predicted_score"] - second_score)
-        threshold = float(per_source[source_name]["threshold"])
-        if margin >= threshold:
-            assignments.append(int(decision["predicted_class_id"]))
+        elif action == "relabel":
             bucket["relabeled"] += 1
+        elif decision["margin"] is None:
+            bucket["ignored_no_margin"] += 1
         else:
-            assignments.append(None)
             bucket["ignored_low_margin"] += 1
 
     return assignments, {
         class_name: dict(sorted(class_counts.items()))
         for class_name, class_counts in sorted(counts.items())
     }
+
+
+def reconcile_candidate_decisions(
+    candidates: list,
+    cams: np.ndarray,
+    cam_class_ids: np.ndarray,
+    active_class_ids: list[int],
+    calibration: dict,
+) -> list[dict]:
+    cam_method = str(calibration["cam_method"])
+    per_source = calibration["per_source"]
+    decisions = []
+
+    for candidate in candidates:
+        source_name = str(candidate.class_name)
+        if source_name not in per_source:
+            raise ValueError(f"Calibration missing source class: {source_name}")
+        cam_decision = score_candidate_cams(
+            candidate=candidate,
+            cams=cams,
+            cam_class_ids=cam_class_ids,
+            active_class_ids=active_class_ids,
+        )[cam_method]
+        threshold = float(per_source[source_name]["threshold"])
+        second_score = cam_decision.get("second_score")
+        margin = (
+            None
+            if second_score is None
+            else float(cam_decision["predicted_score"] - second_score)
+        )
+
+        if cam_decision["agrees_with_candidate"]:
+            action = "keep"
+            assigned_class_id = int(candidate.class_id)
+        elif margin is not None and margin >= threshold:
+            action = "relabel"
+            assigned_class_id = int(cam_decision["predicted_class_id"])
+        else:
+            action = "ignore"
+            assigned_class_id = None
+
+        decisions.append(
+            {
+                "source_class_id": int(candidate.class_id),
+                "source_class_name": source_name,
+                "cam_predicted_class_id": int(
+                    cam_decision["predicted_class_id"]
+                ),
+                "cam_predicted_score": float(cam_decision["predicted_score"]),
+                "cam_second_score": (
+                    None if second_score is None else float(second_score)
+                ),
+                "margin": margin,
+                "threshold": threshold,
+                "threshold_source": per_source[source_name]["threshold_source"],
+                "action": action,
+                "assigned_class_id": assigned_class_id,
+            }
+        )
+    return decisions
 
 
 def reconcile_candidate_pseudo_labels(
@@ -103,7 +149,7 @@ def reconcile_candidate_pseudo_labels(
     cam_root = Path(cam_dir)
     calibration_path = Path(calibration_path)
     calibration = json.loads(calibration_path.read_text(encoding="utf-8"))
-    _validate_calibration(calibration, config)
+    validate_reconciliation_calibration(calibration, config)
     output_root = Path(output_dir)
     _prepare_output(output_root)
     class_by_name = {spec.name: spec for spec in config.classes}
@@ -226,7 +272,7 @@ def reconcile_candidate_pseudo_labels(
     return report
 
 
-def _validate_calibration(calibration: dict, config) -> None:
+def validate_reconciliation_calibration(calibration: dict, config) -> None:
     if int(calibration.get("format_version", -1)) != CALIBRATION_FORMAT_VERSION:
         raise ValueError(
             f"Unsupported calibration format: {calibration.get('format_version')}"

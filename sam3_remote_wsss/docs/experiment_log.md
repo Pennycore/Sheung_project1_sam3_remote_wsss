@@ -1535,6 +1535,20 @@ background/impervious/building/low vegetation/tree/car=
 原主模型完全相同的 SegFormer 训练配置，只替换训练伪标签目录，先运行 seed 42，再进行独立
 validation/test 评估；只有 student 指标通过后才扩展 seed 43/44。
 
+上述冻结监督的 SegFormer student seed 42 已完成训练，best checkpoint 位于 epoch 14。独立14张
+test 父图的 patch 指标为 mIoU/mF1/OA=`0.5433/0.6794/0.7299`，foreground
+mIoU/mF1=`0.6164/0.7548`；拼接父图指标为 mIoU/mF1/OA=
+`0.5613/0.6965/0.7510`，foreground mIoU/mF1=`0.6315/0.7664`。拼接逐类 IoU 为
+background/impervious/building/low vegetation/tree/car=
+`0.2102/0.6716/0.7837/0.5358/0.4370/0.7295`。
+
+与旧主模型 seed 42 的拼接 test 相比，新方法 mIoU/foreground mIoU/OA 分别提高
+`+0.0353/+0.0332/+0.0304`，mIoU 相对提高约 `6.72%`；旧模型 mF1 由逐类 IoU 按
+`2*IoU/(1+IoU)` 重建为 `0.6645`，新模型提高 `+0.0321`。逐类 IoU 增量为 background
+`+0.0462`、impervious `+0.0750`、building `+0.0112`、low vegetation `+0.0702`、tree
+`-0.0195`、car `+0.0289`。因此 seed 42 通过 student 独立测试门槛；下一步不再修改方法，使用
+相同配置补跑 seed 43/44，报告三 seed 均值与标准差，并单独分析 tree 的回退。
+
 ## 后续实验记录模板
 
 ```text

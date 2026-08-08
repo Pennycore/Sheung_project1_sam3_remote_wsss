@@ -255,8 +255,10 @@ pixel GT；GT 只用于最终离线评估。下一步先导出 Validation256 伪
 完整4352训练 patch 的校正前景已导出，并与既有背景种子合并。最终训练监督的
 mIoU/mF1/OA=`0.4204/0.5557/0.5070`，foreground mIoU/mF1=`0.4732/0.6127`，
 coverage=`0.6251`，background IoU=`0.1565`，skipped=0。下一步冻结该监督，使用与原主模型
-相同的 SegFormer 配置训练 seed 42，并在独立 validation/test 上与原主模型比较；通过后再补
-seed 43/44。
+相同的 SegFormer 配置训练。seed 42 已完成：best epoch 14，独立14张 test 父图拼接
+mIoU/mF1/OA=`0.5613/0.6965/0.7510`，foreground mIoU/mF1=`0.6315/0.7664`。相对旧主模型
+拼接 test，mIoU/foreground mIoU/OA 提高 `+0.0353/+0.0332/+0.0304`。下一步冻结全部设置补跑
+seed 43/44，并报告三 seed 均值与标准差。
 
 ## 8. 新任务交接文本
 
@@ -270,6 +272,7 @@ docs/experiment_log.md 和 docs/runbook.md，再继续开发。
 完整4352训练 patch 的 RemoteCLIP 视觉共识前景校正和背景种子合并已经完成。
 当前冻结监督位于服务器 `runs/remoteclip_visual_consensus_background_full_train_v1/pseudo_labels`，
 伪标签 mIoU/mF1/OA 为 `0.4204/0.5557/0.5070`。下一步使用与原主模型完全相同的 SegFormer
-配置训练 seed 42，并完成独立 validation/test 评估；暂不继续调整伪标签规则。
+配置训练；seed 42 拼接 test mIoU/mF1/OA 已达到 `0.5613/0.6965/0.7510`。下一步冻结方法补跑
+seed 43/44，并汇总三 seed 均值与标准差；暂不继续调整伪标签规则。
 请以工程中的现有实现和文档记录为准，不要重新从零设计。
 ```
